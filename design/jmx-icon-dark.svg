@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <title>JMComicX — Apricot on Black</title>
+  <desc>An apricot comic book on black, with layered pages and pale cream-orange panel details.</desc>
+  <defs>
+    <linearGradient id="shadow" x1="256" y1="172" x2="256" y2="388" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5A3B28" stop-opacity="0" />
+      <stop offset="1" stop-color="#5A3B28" stop-opacity="0.07" />
+    </linearGradient>
+    <linearGradient id="cover" x1="256" y1="170" x2="256" y2="370" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F0A35D" />
+      <stop offset="0.48" stop-color="#D98742" />
+      <stop offset="1" stop-color="#B86A31" />
+    </linearGradient>
+    <linearGradient id="left" x1="132" y1="170" x2="250" y2="310" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFD199" />
+      <stop offset="0.44" stop-color="#FFAC66" />
+      <stop offset="1" stop-color="#ED864A" />
+    </linearGradient>
+    <linearGradient id="right" x1="280" y1="160" x2="382" y2="336" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFD199" />
+      <stop offset="0.44" stop-color="#FFB574" />
+      <stop offset="1" stop-color="#F39A57" />
+    </linearGradient>
+    <linearGradient id="fold" x1="344" y1="152" x2="372" y2="184" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE6C4" />
+      <stop offset="1" stop-color="#FFC58D" />
+    </linearGradient>
+    <linearGradient id="gutter" x1="246" y1="256" x2="266" y2="256" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A86737" stop-opacity="0" />
+      <stop offset="0.5" stop-color="#A86737" stop-opacity="0.20" />
+      <stop offset="1" stop-color="#A86737" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+  <g id="background">
+    <path data-role="surface" fill="#000000" d="M120 0H392C470 0 512 42 512 120V392C512 470 470 512 392 512H120C42 512 0 470 0 392V120C0 42 42 0 120 0Z" />
+    <path data-role="rim" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="1.5" d="M120 1H392C469 1 511 43 511 120V392C511 469 469 511 392 511H120C43 511 1 469 1 392V120C1 43 43 1 120 1Z" />
+  </g>
+  <g id="book">
+    <path fill="url(#shadow)" d="M107 176C107 165 115 158 127 158C178 156 221 170 256 189C291 170 334 156 385 158C397 158 405 165 405 176V348C405 361 397 367 384 367C333 364 295 374 267 389C260 393 252 393 245 389C217 374 179 364 128 367C115 367 107 361 107 348Z" />
+    <path fill="#5A3B28" fill-opacity="0.06" d="M114 176C114 168 120 163 130 163C177 161 220 174 256 194C292 174 335 161 382 163C392 163 398 168 398 176V341C398 350 392 356 382 355C330 352 292 363 264 378C259 381 253 381 248 378C220 363 182 352 130 355C120 356 114 350 114 341Z" />
+    <path id="silhouette" fill="url(#cover)" d="M112 172C112 162 119 156 130 156C177 154 219 167 256 187C293 167 335 154 382 156C393 156 400 162 400 172V337C400 347 394 353 383 352C333 349 294 359 266 374C260 377 252 377 246 374C218 359 179 349 129 352C118 353 112 347 112 337Z" />
+    <path stroke="#FFE1B6" stroke-opacity="0.55" stroke-width="2" stroke-linecap="round" d="M123 336C168 332 216 343 248 360M264 360C296 343 344 332 389 336" />
+    <path fill="url(#left)" d="M132 144C176 144 214 157 250 179V344C215 325 173 315 133 318C127 319 124 315 124 309V153C124 147 127 144 132 144Z" />
+    <path fill="url(#right)" d="M262 179C289 162 315 152 344 147L388 187V309C388 315 385 319 379 318C339 315 297 325 262 344Z" />
+    <path fill="#A86737" fill-opacity="0.12" d="M344 147L388 187L352 190C346 190 342 186 342 180Z" />
+    <path fill="url(#fold)" d="M344 147L388 187C376 183 365 181 353 182C347 182 344 179 344 173Z" />
+    <path stroke="#FFFFFF" stroke-opacity="0.50" stroke-width="2" stroke-linecap="round" d="M132 146C176 146 212 159 247 180M265 180C292 163 316 154 341 150" />
+    <path fill="url(#gutter)" d="M246 177L256 183L266 177V345L256 350L246 345Z" />
+    <path data-role="paper" data-panel="true" fill="#FFF0DD" d="M154 181C176 183 196 188 218 198C222 200 224 203 224 208V273C224 277 221 279 217 277C196 269 176 265 154 264C150 264 148 262 148 258V187C148 183 150 181 154 181Z" />
+    <path data-role="paper" stroke="#FFF0DD" stroke-width="7" stroke-linecap="round" d="M285 223C307 214 328 210 350 210M285 249C307 240 328 236 350 236M285 275C301 269 315 266 328 264" />
+  </g>
+</svg>

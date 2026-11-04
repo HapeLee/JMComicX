@@ -89,14 +89,20 @@ $env:JMX_RELEASE_KEY_PASSWORD="<key password>"
 
 ## 版本管理
 
-版本号定义在 `version.properties`：
+版本号定义在 `version.properties`，与同作者的 Matter 一致：
 
 ```properties
-VERSION_CODE=20802
-VERSION_NAME=2.8.2
+VERSION_MAJOR=2
+VERSION_MINOR=8
+VERSION_PATCH=3
+VERSION_SUFFIX=0
+VERSION_CODE_BASE=1000000
 ```
 
-`app/build.gradle.kts` 读取该文件设置 `versionCode` 和 `versionName`。
+- `versionName` = `MAJOR.MINOR.PATCH`；`VERSION_SUFFIX=1` 时由 CI 追加 `-beta.N`（N 以已有 tag 递增，本地固定 `-beta.local`）。
+- `versionCode` = `VERSION_CODE_BASE + git rev-list --count HEAD`。旧方案是 `major*10000+minor*100+patch`（2.8.2 = 20802），偏移不可再改，否则覆盖安装断链。
+- 构建脚本从不回写任何文件；CI 用 `-PjmxVersionName` / `-PjmxVersionCode` 注入。浅克隆 `--depth 1` 只会算出 1，需要 `fetch-depth: 0`。
+- 发布前只改 `VERSION_MAJOR/MINOR/PATCH/SUFFIX`。
 
 ## Build Types
 
@@ -109,12 +115,14 @@ debug 配置了 `applicationIdSuffix = ".debug"`（包名为 `dev.jmx.client.deb
 
 ## CI / GitHub Actions
 
-两个手动触发的工作流（`.github/workflows/`）：
+工作流（`.github/workflows/`）：
 
-- `android-debug.yml` — 测试 + Lint + Debug APK artifact
-- `android-release.yml` — 测试 + Lint + R8 + 签名 + Release APK artifact
+- `verify.yml` — push `main` / PR：`core` 与 `app` 单测 + Debug 构建
+- `auto-release.yml` — 测试 + Lint + R8 + 签名 + Release APK；`publish=false` 时只出 artifact
+- `release.yml` — 正式发布唯一入口（`workflow_dispatch`，仅 `HapeLee` 在 `main` 可用），打 `v<versionName>` tag 并建 GitHub Release，随后推送 Telegram
+- `android-debug.yml` — 手动触发的调试包
 
-Release 工作流使用 GitHub Actions Secrets 提供签名证书。
+签名证书由 Secrets 提供：`JMX_RELEASE_KEYSTORE_BASE64` / `JMX_RELEASE_STORE_PASSWORD` / `JMX_RELEASE_KEY_ALIAS` / `JMX_RELEASE_KEY_PASSWORD`。缺任一项 `assembleRelease` 直接失败（`preReleaseBuild` 校验）。Telegram 分发用 `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`（逗号分隔可多个会话），未配置则跳过。
 
 ## 编码约定
 

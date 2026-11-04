@@ -1,7 +1,6 @@
 package dev.jmx.client
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -87,14 +86,13 @@ internal fun MiuixForegroundBlurHero(
         Box(
             modifier = Modifier
                 .size(88.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color.White.copy(alpha = 0.96f)),
+                .clip(RoundedCornerShape(24.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Image(
-                painter = painterResource(R.drawable.jmx_logo),
+                painter = painterResource(if (darkTheme) R.drawable.jmx_logo_dark else R.drawable.jmx_logo),
                 contentDescription = "JMComicX",
-                modifier = Modifier.size(80.dp),
+                modifier = Modifier.fillMaxSize(),
             )
         }
         Text(

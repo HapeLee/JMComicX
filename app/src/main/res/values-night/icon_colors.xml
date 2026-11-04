@@ -1,0 +1,5 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <color name="jmx_icon_surface">#000000</color>
+    <color name="jmx_icon_rim">#1AFFFFFF</color>
+</resources>

@@ -1,22 +1,28 @@
 package dev.jmx.client
 
-import androidx.activity.compose.BackHandler
+import android.os.Build
+import android.view.RoundedCorner
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.exponentialDecay
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -26,6 +32,8 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,57 +42,87 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import dev.jmx.client.core.api.ActionResult
-import dev.jmx.client.core.api.AlbumDetail
 import dev.jmx.client.core.api.AlbumChapter
+import dev.jmx.client.core.api.AlbumDetail
 import dev.jmx.client.core.api.CommentItem
 import dev.jmx.client.core.api.CommentPage
 import dev.jmx.client.core.result.JmxResult
 import dev.jmx.client.core.runtime.JmxCore
 import dev.jmx.client.effect.BlurredBar
+import dev.jmx.client.effect.MorphPanelClipShape
 import dev.jmx.client.effect.TopBarBlurStyle
+import dev.jmx.client.effect.computeCoverMorphFrame
+import dev.jmx.client.effect.computeMorphPanelAlpha
+import dev.jmx.client.effect.computeMorphSettleVelocity
+import dev.jmx.client.effect.computeMorphVeil
+import dev.jmx.client.effect.computePanelMorphFrame
+import dev.jmx.client.effect.computePredictiveMorphProgress
+import dev.jmx.client.effect.isBoundsVisibleInScreen
+import dev.jmx.client.effect.liquid.LiquidGlassIconButton
+import dev.jmx.client.effect.liquid.animateTopBarGlassProgress
+import dev.jmx.client.effect.morphContentSettled
 import dev.jmx.client.effect.rememberBarBackdrop
+import dev.jmx.client.effect.rememberPagerFlingPassThroughConnection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -93,25 +131,20 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.util.concurrent.ConcurrentHashMap
-import kotlin.math.hypot
-import kotlin.math.min
-import kotlin.math.roundToInt
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.FabPosition
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Surface
+import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -120,17 +153,24 @@ import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Check
-import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.ChevronBackward
 import top.yukonga.miuix.kmp.icon.extended.Download
-import top.yukonga.miuix.kmp.icon.extended.Edit
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
 import top.yukonga.miuix.kmp.icon.extended.Favorites
 import top.yukonga.miuix.kmp.icon.extended.FavoritesFill
+import top.yukonga.miuix.kmp.icon.extended.Notes
 import top.yukonga.miuix.kmp.icon.extended.Play
 import top.yukonga.miuix.kmp.icon.extended.Send
-import top.yukonga.miuix.kmp.icon.extended.Notes
+import top.yukonga.miuix.kmp.icon.extended.Sort
+import top.yukonga.miuix.kmp.icon.extended.Store
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.springAnimateToPage
 import top.yukonga.miuix.kmp.window.WindowDialog
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.hypot
+import kotlin.math.min
+import kotlin.math.roundToInt
+import dev.jmx.client.effect.liquid.GlassTopBarIcon as Icon
 
 internal data class AlbumDetailTransitionRequest(
     val album: HomeAlbum,
@@ -168,6 +208,20 @@ internal fun AlbumDetailTransitionHost(
     var isExiting by remember(request.album.id) { mutableStateOf(false) }
     var hasDismissed by remember(request.album.id) { mutableStateOf(false) }
     var searchAfterExit by remember(request.album.id) { mutableStateOf<String?>(null) }
+    val view = LocalView.current
+    val screenCornerRadiusPx = remember(view) {
+        if (Build.VERSION.SDK_INT >= 31) {
+            val insets = view.rootWindowInsets
+            fun radius(position: Int): Float =
+                insets?.getRoundedCorner(position)?.radius?.toFloat() ?: 0f
+            maxOf(
+                radius(RoundedCorner.POSITION_TOP_LEFT),
+                radius(RoundedCorner.POSITION_TOP_RIGHT),
+                radius(RoundedCorner.POSITION_BOTTOM_RIGHT),
+                radius(RoundedCorner.POSITION_BOTTOM_LEFT),
+            )
+        } else 0f
+    }
 
     fun dismissOnce() {
         if (!hasDismissed) {
@@ -184,10 +238,7 @@ internal fun AlbumDetailTransitionHost(
             try {
                 transitionProgress.animateTo(
                     targetValue = 0f,
-                    animationSpec = tween(
-                        durationMillis = DETAIL_EXIT_DURATION_MILLIS,
-                        easing = DetailTransitionEasing,
-                    ),
+                    animationSpec = DetailSpringSpec,
                 )
             } finally {
                 withContext(NonCancellable) {
@@ -199,17 +250,57 @@ internal fun AlbumDetailTransitionHost(
         }
     }
 
-    BackHandler(onBack = { exitDetail() })
+    PredictiveBackHandler(enabled = !hasDismissed) { events ->
+        if (isExiting) {
+            events.collect { }
+            return@PredictiveBackHandler
+        }
+        val startProgress = transitionProgress.value
+        var lastProgress = startProgress
+        var lastTimeNanos = 0L
+        var releaseVelocity = 0f
+        try {
+            transitionProgress.stop()
+            events.collect { event ->
+                val preview = computePredictiveMorphProgress(startProgress, event.progress)
+                val now = System.nanoTime()
+                if (lastTimeNanos != 0L && now > lastTimeNanos) {
+                    val dt = (now - lastTimeNanos) / 1_000_000_000f
+                    if (dt > 0f) {
+                        releaseVelocity = (preview - lastProgress) / dt
+                    }
+                }
+                lastProgress = preview
+                lastTimeNanos = now
+                transitionProgress.snapTo(preview)
+            }
+            isExiting = true
+            val settleVelocity = computeMorphSettleVelocity(transitionProgress.value, 0f, releaseVelocity)
+            transitionProgress.animateTo(
+                targetValue = 0f,
+                animationSpec = DetailSpringSpec,
+                initialVelocity = settleVelocity,
+            )
+            dismissOnce()
+            searchAfterExit?.let(onSearchRequested)
+        } catch (cancelled: CancellationException) {
+            isExiting = false
+            coroutineScope.launch {
+                transitionProgress.animateTo(
+                    targetValue = 1f,
+                    animationSpec = DetailSpringSpec,
+                )
+            }
+            throw cancelled
+        }
+    }
 
-    LaunchedEffect(targetBounds) {
-        if (targetBounds != null && !hasEntered) {
+    LaunchedEffect(targetBounds, request.sourceBounds) {
+        if (!hasEntered && (targetBounds != null || request.sourceBounds == null)) {
             hasEntered = true
             transitionProgress.animateTo(
                 targetValue = 1f,
-                animationSpec = tween(
-                    durationMillis = DETAIL_ENTER_DURATION_MILLIS,
-                    easing = DetailTransitionEasing,
-                ),
+                animationSpec = DetailSpringSpec,
             )
         }
     }
@@ -217,80 +308,155 @@ internal fun AlbumDetailTransitionHost(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val density = LocalDensity.current
         val pageWidthPx = constraints.maxWidth.toFloat()
+        val pageHeightPx = constraints.maxHeight.toFloat()
+        val screenBounds = remember(pageWidthPx, pageHeightPx) {
+            Rect(0f, 0f, pageWidthPx, pageHeightPx)
+        }
         val progress = transitionProgress.value
-        val blockerInteractionSource = remember { MutableInteractionSource() }
+        val startCornerRadiusPx = with(density) { 8.dp.toPx() }
 
+        val source = request.sourceBounds
+        val effectiveStartBounds = remember(source, screenBounds) {
+            if (source != null && !source.isEmpty) {
+                if (isBoundsVisibleInScreen(source, screenBounds)) {
+                    source
+                } else {
+                    val safeWidth = (120f * density.density).coerceAtLeast(100f)
+                    val safeHeight = safeWidth * (4f / 3f)
+                    val center = screenBounds.center
+                    Rect(
+                        left = center.x - safeWidth / 2f,
+                        top = center.y - safeHeight / 2f,
+                        right = center.x + safeWidth / 2f,
+                        bottom = center.y + safeHeight / 2f,
+                    )
+                }
+            } else null
+        }
+
+        val panelFrame = remember(progress, effectiveStartBounds, screenBounds, screenCornerRadiusPx) {
+            if (effectiveStartBounds != null) {
+                computePanelMorphFrame(
+                    progress = progress,
+                    start = effectiveStartBounds,
+                    end = screenBounds,
+                    startCornerRadiusPx = startCornerRadiusPx,
+                    endCornerRadiusPx = screenCornerRadiusPx,
+                )
+            } else null
+        }
+
+        val veil = computeMorphVeil(progress)
+        val contentSettled = morphContentSettled(veil, progress)
+        val isExpanded = hasEntered && progress >= 0.999f && !isExiting
+
+        // 1. 动态裁剪背景层 (视觉面)
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(1f)
-                .clickable(
-                    interactionSource = blockerInteractionSource,
-                    indication = null,
-                    onClick = {},
-                ),
+                .graphicsLayer {
+                    val frame = panelFrame
+                    alpha = if (frame == null) veil else computeMorphPanelAlpha(progress)
+                    clip = !isExpanded && frame != null
+                    if (clip && frame != null) {
+                        shape = MorphPanelClipShape(frame.bounds, frame.cornerRadii)
+                    }
+                }
+                .background(MiuixTheme.colorScheme.surface),
         )
 
-        AlbumDetailScreen(
-            album = request.album,
-            repository = repository,
-            readerActive = readerActive,
-            authenticated = authenticated,
-            onRequireLogin = onRequireLogin,
-            bookshelfRepository = bookshelfRepository,
-            onBookshelfChanged = onBookshelfChanged,
-            onFavoriteChanged = onFavoriteChanged,
-            onSearchRequested = { query -> exitDetail(query) },
-            onStartReading = onStartReading,
-            showCover = request.sourceBounds == null ||
-                (hasEntered && progress >= 0.999f && !isExiting),
-            onBack = { exitDetail() },
-            onCoverTargetChanged = { bounds -> targetBounds = bounds },
-            onChaptersLoaded = onChaptersLoaded,
-            favoriteRepository = favoriteRepository,
-            sessionRevision = sessionRevision,
-            offline = request.origin == AlbumDetailOrigin.DOWNLOADS,
-            offlineAlbum = offlineAlbum,
-            offlineManifest = offlineManifest,
-            onDownload = onDownload,
-            topBarBlurStyle = topBarBlurStyle,
+        // 2. 内容层 (内容层：无几何缩放，只吃透明度与轮廓裁剪，未完全显形前屏蔽交互)
+        val contentSemantics = if (contentSettled) Modifier else Modifier.clearAndSetSemantics {}
+        val inputGate = if (contentSettled) {
+            Modifier
+        } else {
+            Modifier.pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                    }
+                }
+            }
+        }
+
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(2f)
+                .then(contentSemantics)
+                .then(inputGate)
                 .graphicsLayer {
-                    translationX = pageWidthPx * (1f - progress)
+                    val frame = panelFrame
+                    clip = !isExpanded && frame != null
+                    if (clip && frame != null) {
+                        shape = MorphPanelClipShape(frame.bounds, frame.cornerRadii)
+                    }
+                    alpha = if (frame != null) veil else progress
                 },
-        )
+        ) {
+            AlbumDetailScreen(
+                album = request.album,
+                repository = repository,
+                readerActive = readerActive,
+                authenticated = authenticated,
+                onRequireLogin = onRequireLogin,
+                bookshelfRepository = bookshelfRepository,
+                onBookshelfChanged = onBookshelfChanged,
+                onFavoriteChanged = onFavoriteChanged,
+                onSearchRequested = { query -> exitDetail(query) },
+                onStartReading = onStartReading,
+                showCover = request.sourceBounds == null || isExpanded,
+                onBack = { exitDetail() },
+                onCoverTargetChanged = { bounds -> targetBounds = bounds },
+                onChaptersLoaded = onChaptersLoaded,
+                favoriteRepository = favoriteRepository,
+                sessionRevision = sessionRevision,
+                offline = request.origin == AlbumDetailOrigin.DOWNLOADS,
+                offlineAlbum = offlineAlbum,
+                offlineManifest = offlineManifest,
+                onDownload = onDownload,
+                topBarBlurStyle = topBarBlurStyle,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
 
-        val source = request.sourceBounds
+        // 3. 飞行封面层 (采用 e1 位置先快 + e2 尺寸先慢双缓动自然飞入与生长)
+        val context = LocalContext.current
+        val flyingCoverRequest = remember(request.album.coverUrl) {
+            buildCoverRequest(context, request.album.coverUrl)
+        }
         val destination = targetBounds
-        if (source != null && (destination == null || !hasEntered || progress < 0.999f || isExiting)) {
-            val animatedBounds = if (destination == null) {
-                source
-            } else {
-                curvedCoverBounds(
-                    start = source,
-                    end = destination,
+        if (effectiveStartBounds != null && !isExpanded) {
+            val coverFrame = if (destination != null) {
+                computeCoverMorphFrame(
                     progress = progress,
-                    maxBend = pageWidthPx * 0.26f,
+                    start = effectiveStartBounds,
+                    end = destination,
+                    startCornerRadiusPx = startCornerRadiusPx,
+                    endCornerRadiusPx = startCornerRadiusPx,
                 )
-            }
+            } else null
+
+            val coverBounds = coverFrame?.bounds ?: effectiveStartBounds
+            val coverShape = remember { RoundedCornerShape(8.dp) }
+
             AsyncImage(
-                model = buildCoverRequest(LocalContext.current, request.album.coverUrl),
+                model = flyingCoverRequest,
                 contentDescription = request.album.name,
                 modifier = Modifier
                     .zIndex(4f)
                     .offset {
                         IntOffset(
-                            x = animatedBounds.left.roundToInt(),
-                            y = animatedBounds.top.roundToInt(),
+                            x = coverBounds.left.roundToInt(),
+                            y = coverBounds.top.roundToInt(),
                         )
                     }
                     .size(
-                        width = with(density) { animatedBounds.width.toDp() },
-                        height = with(density) { animatedBounds.height.toDp() },
+                        width = with(density) { coverBounds.width.toDp() },
+                        height = with(density) { coverBounds.height.toDp() },
                     )
-                    .clip(RoundedCornerShape(8.dp)),
+                    .clip(coverShape),
                 contentScale = ContentScale.Crop,
             )
         }
@@ -323,7 +489,7 @@ private fun AlbumDetailScreen(
     modifier: Modifier = Modifier,
 ) {
     var state by remember(album.id) { mutableStateOf<AlbumDetailUiState>(AlbumDetailUiState.Loading) }
-    var selectedTab by rememberSaveable(album.id) { mutableIntStateOf(0) }
+    val pagerState = rememberPagerState(initialPage = 0) { 3 }
     var retryKey by remember(album.id) { mutableIntStateOf(0) }
     var pageSummary by remember(album.id) { mutableStateOf<AlbumPageSummary>(AlbumPageSummary.Loading) }
     var pendingAction by remember(album.id) { mutableStateOf<DetailAccountAction?>(null) }
@@ -631,75 +797,61 @@ private fun AlbumDetailScreen(
         }
     }
 
+    val detailTitle = when (val current = state) {
+        is AlbumDetailUiState.Content -> current.detail.name ?: album.name
+        else -> album.name
+    }
+
     Scaffold(
         modifier = modifier,
         containerColor = Color.Transparent,
-        topBar = {
-            BlurredBar(
-                backdrop = pageBackdrop,
-                style = topBarBlurStyle,
-            ) {
-                AlbumDetailTopBar(
-                    title = when (val current = state) {
-                        is AlbumDetailUiState.Content -> current.detail.name ?: album.name
-                        else -> album.name
-                    },
-                    onBack = onBack,
-                    onDownload = ::requestDownload,
-                    downloadEnabled = state is AlbumDetailUiState.Content,
-                    // 从离线下载页进来的是本地视图：这一页不联网，下载按钮没有去处。
-                    showDownload = !offline,
-                    transparent = pageBackdrop != null,
-                )
-            }
-        },
         floatingActionButton = {
+            val content = state as? AlbumDetailUiState.Content
+            val chapters = visibleChapters
+            val savedChapterId = if (offline) offlineProgress.chapterId(album.id) else resumeEntry?.lastChapterId
+            val resumeChapter = savedChapterId?.let { id -> chapters.firstOrNull { it.id == id } }
+            val firstChapter = resumeChapter ?: chapters.firstOrNull()
+
             FloatingActionButton(
                 onClick = {
-                    val content = state as? AlbumDetailUiState.Content
-                    if (selectedTab == DETAIL_COMMENTS_TAB) {
+                    if (pagerState.currentPage == DETAIL_COMMENTS_TAB) {
                         openCommentComposer()
-                    } else if (content != null) {
-                        val chapters = visibleChapters
-                        val savedChapterId = if (offline) offlineProgress.chapterId(album.id) else resumeEntry?.lastChapterId
-                        val firstChapter = savedChapterId
-                            ?.let { id -> chapters.firstOrNull { it.id == id } }
-                            ?: chapters.firstOrNull()
-                        if (firstChapter != null) {
-                            startReading(
-                                firstChapter.id,
-                                if (firstChapter.id == savedChapterId) {
-                                    if (offline) offlineProgress.pageIndex(album.id) else resumeEntry?.lastPageIndex ?: 0
-                                } else 0,
-                            )
-                        } else if (offline) {
-                            actionError = "还没有完整下载的章节"
-                        }
+                    } else if (content != null && firstChapter != null) {
+                        startReading(
+                            firstChapter.id,
+                            if (firstChapter.id == savedChapterId) {
+                                if (offline) offlineProgress.pageIndex(album.id) else resumeEntry?.lastPageIndex ?: 0
+                            } else 0,
+                        )
+                    } else if (offline) {
+                        actionError = "还没有完整下载的章节"
                     }
                 },
-                minWidth = 132.dp,
-                minHeight = 54.dp,
-                shape = RoundedCornerShape(18.dp),
+                minWidth = 136.dp,
+                minHeight = 52.dp,
+                shape = RoundedCornerShape(26.dp),
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 18.dp),
+                    modifier = Modifier.padding(horizontal = 20.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        imageVector = if (selectedTab == DETAIL_COMMENTS_TAB) MiuixIcons.Send else MiuixIcons.Play,
+                        imageVector = if (pagerState.currentPage == DETAIL_COMMENTS_TAB) MiuixIcons.Send else MiuixIcons.Play,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp),
                         tint = MiuixTheme.colorScheme.onPrimary,
                     )
                     Text(
                         text = when {
-                            selectedTab == DETAIL_COMMENTS_TAB -> "发表"
-                            (offline && offlineProgress.chapterId(album.id) != null) || resumeEntry?.lastChapterId != null -> "继续阅读"
-                            else -> "开始观看"
+                            pagerState.currentPage == DETAIL_COMMENTS_TAB -> "发表评论"
+                            resumeChapter != null -> resumeChapter.displayName(chapters.indexOf(resumeChapter))
+                            else -> "开始阅读"
                         },
                         style = MiuixTheme.textStyles.button,
                         color = MiuixTheme.colorScheme.onPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -710,12 +862,14 @@ private fun AlbumDetailScreen(
             album = album,
             state = state,
             chapters = visibleChapters,
-            selectedTab = selectedTab,
-            onTabSelected = { selectedTab = it },
+            pagerState = pagerState,
             pageSummary = pageSummary,
             showCover = showCover,
             innerPadding = innerPadding,
             backdrop = pageBackdrop,
+            topBarBlurStyle = topBarBlurStyle,
+            detailTitle = detailTitle,
+            onBack = onBack,
             onCoverTargetChanged = onCoverTargetChanged,
             onChapterSelected = { chapter -> startReading(chapter.id) },
             onLoadMoreComments = ::loadMoreComments,
@@ -724,7 +878,11 @@ private fun AlbumDetailScreen(
             onFavorite = ::favoriteAlbum,
             inBookshelf = inBookshelf,
             onBookshelf = ::toggleBookshelf,
+            onDownload = ::requestDownload,
+            downloadEnabled = state is AlbumDetailUiState.Content,
+            showDownload = !offline,
             onSearchRequested = onSearchRequested,
+            lastReadChapterId = resumeEntry?.lastChapterId,
             pendingAction = pendingAction,
             onRetry = {
                 state = AlbumDetailUiState.Loading
@@ -751,8 +909,8 @@ private fun AlbumDetailScreen(
                 id = chapter.id,
                 title = chapter.displayName(index),
                 summary = if (offlineManifest?.chapters?.any {
-                    it.id == chapter.id && it.expectedPageCount > 0 && it.pages.size == it.expectedPageCount
-                } == true) "已下载" else null,
+                        it.id == chapter.id && it.expectedPageCount > 0 && it.pages.size == it.expectedPageCount
+                    } == true) "已下载" else null,
             )
         },
         onDismiss = { showDownloadPicker = false },
@@ -787,73 +945,19 @@ private fun AlbumDetailScreen(
     )
 }
 
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun AlbumDetailTopBar(
-    title: String,
-    onBack: () -> Unit,
-    onDownload: () -> Unit,
-    downloadEnabled: Boolean,
-    showDownload: Boolean = true,
-    transparent: Boolean = false,
-) {
-    Surface(color = if (transparent) Color.Transparent else MiuixTheme.colorScheme.surface) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .height(64.dp),
-        ) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier.align(Alignment.CenterStart),
-            ) {
-                Icon(
-                    imageVector = MiuixIcons.Back,
-                    contentDescription = "返回",
-                    tint = MiuixTheme.colorScheme.onBackground,
-                )
-            }
-            if (showDownload) {
-                IconButton(
-                    onClick = onDownload,
-                    enabled = downloadEnabled,
-                    modifier = Modifier.align(Alignment.CenterEnd),
-                ) {
-                    Icon(
-                        imageVector = MiuixIcons.Download,
-                        contentDescription = "下载漫画",
-                        tint = MiuixTheme.colorScheme.onBackground,
-                    )
-                }
-            }
-            Text(
-                text = title,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .fillMaxWidth()
-                    .padding(horizontal = 72.dp)
-                    .basicMarquee(),
-                style = MiuixTheme.textStyles.title3,
-                color = MiuixTheme.colorScheme.onSurface,
-                maxLines = 1,
-                textAlign = TextAlign.Center,
-            )
-        }
-    }
-}
-
 @Composable
 private fun DetailBody(
     album: HomeAlbum,
     state: AlbumDetailUiState,
     chapters: List<AlbumChapter>,
-    selectedTab: Int,
-    onTabSelected: (Int) -> Unit,
+    pagerState: PagerState,
     pageSummary: AlbumPageSummary,
     showCover: Boolean,
     innerPadding: PaddingValues,
     backdrop: LayerBackdrop? = null,
+    topBarBlurStyle: TopBarBlurStyle = TopBarBlurStyle.GAUSSIAN,
+    detailTitle: String = album.name,
+    onBack: () -> Unit,
     onCoverTargetChanged: (Rect) -> Unit,
     onChapterSelected: (AlbumChapter) -> Unit,
     onLoadMoreComments: () -> Unit,
@@ -862,13 +966,37 @@ private fun DetailBody(
     onFavorite: () -> Unit,
     inBookshelf: Boolean,
     onBookshelf: () -> Unit,
+    onDownload: () -> Unit,
+    downloadEnabled: Boolean,
+    showDownload: Boolean,
     onSearchRequested: (String) -> Unit,
+    lastReadChapterId: String? = null,
     pendingAction: DetailAccountAction?,
     onRetry: () -> Unit,
 ) {
-    val listState = rememberLazyListState()
     val density = LocalDensity.current
-    val coverTop = innerPadding.calculateTopPadding() + 12.dp
+    val coroutineScope = rememberCoroutineScope()
+    val view = LocalView.current
+    val systemStatusBarHeight = remember(view, density) {
+        val topPx = if (Build.VERSION.SDK_INT >= 30) {
+            view.rootWindowInsets?.getInsets(android.view.WindowInsets.Type.statusBars())?.top ?: 0
+        } else {
+            @Suppress("DEPRECATION")
+            view.rootWindowInsets?.systemWindowInsetTop ?: 0
+        }
+        with(density) { topPx.toDp() }
+    }
+    val statusBarPadding = maxOf(
+        innerPadding.calculateTopPadding(),
+        WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
+        systemStatusBarHeight,
+    )
+    val topBarHeightDp = statusBarPadding + 56.dp
+    val topBarHeightPx = with(density) { topBarHeightDp.toPx() }
+    val coverSpacingTopDp = 20.dp
+    val coverSpacingTopPx = with(density) { coverSpacingTopDp.toPx() }
+    val coverTopPx = topBarHeightPx + coverSpacingTopPx
+    val coverTop = topBarHeightDp + coverSpacingTopDp
     val targetBounds = with(density) {
         Rect(
             left = DETAIL_HORIZONTAL_PADDING.toPx(),
@@ -881,124 +1009,484 @@ private fun DetailBody(
 
     val detail = (state as? AlbumDetailUiState.Content)?.detail
     val comments = (state as? AlbumDetailUiState.Content)?.comments
+    var catalogReversed by rememberSaveable { mutableStateOf(false) }
 
-    LaunchedEffect(listState, selectedTab, comments?.nextPage, comments?.isLoading, comments?.endReached) {
-        if (selectedTab != DETAIL_COMMENTS_TAB || comments == null || comments.isLoading || comments.endReached) {
+    val infoListState = rememberLazyListState()
+    val catalogListState = rememberLazyListState()
+    val commentsListState = rememberLazyListState()
+
+    val surfaceColor = MiuixTheme.colorScheme.surface
+    val context = LocalContext.current
+    val ambientCoverRequest = remember(album.coverUrl) {
+        buildCoverRequest(context, album.coverUrl)
+    }
+
+    val childPagerNestedScrollConnection = rememberPagerFlingPassThroughConnection(
+        state = pagerState,
+    )
+
+    LaunchedEffect(commentsListState, pagerState.currentPage, comments?.nextPage, comments?.isLoading, comments?.endReached) {
+        if (pagerState.currentPage != DETAIL_COMMENTS_TAB || comments == null || comments.isLoading || comments.endReached) {
             return@LaunchedEffect
         }
         snapshotFlow {
-            val layout = listState.layoutInfo
+            val layout = commentsListState.layoutInfo
             val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
             layout.totalItemsCount > 0 && lastVisible >= layout.totalItemsCount - 3
         }.filter { it }.first()
         onLoadMoreComments()
     }
 
-    val tabSwipeThreshold = with(density) { 56.dp.toPx() }
+    var summaryHeightPx by remember { mutableFloatStateOf(0f) }
+    var tabBarHeightPx by remember { mutableFloatStateOf(0f) }
+    var headerOffset by remember { mutableFloatStateOf(0f) }
 
-    LazyColumn(
-        state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
-            .background(MiuixTheme.colorScheme.surface)
-            .pointerInput(selectedTab) {
-                var dragDistance = 0f
-                detectHorizontalDragGestures(
-                    onHorizontalDrag = { change, dragAmount ->
-                        dragDistance += dragAmount
-                        change.consume()
-                    },
-                    onDragEnd = {
-                        when {
-                            dragDistance <= -tabSwipeThreshold && selectedTab < DETAIL_COMMENTS_TAB -> {
-                                onTabSelected(selectedTab + 1)
-                            }
-                            dragDistance >= tabSwipeThreshold && selectedTab > DETAIL_INFO_TAB -> {
-                                onTabSelected(selectedTab - 1)
+    val maxScrollPx = summaryHeightPx + coverSpacingTopPx
+
+    LaunchedEffect(maxScrollPx) {
+        if (maxScrollPx > 0f && headerOffset < -maxScrollPx) {
+            headerOffset = -maxScrollPx
+        }
+    }
+
+    val nestedScrollConnection = remember(maxScrollPx) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // 手指向上划（页面内容向下滚动），优先收起并折叠封面区
+                if (available.y < 0f && maxScrollPx > 0f && headerOffset > -maxScrollPx) {
+                    val oldOffset = headerOffset
+                    val newOffset = (oldOffset + available.y).coerceIn(-maxScrollPx, 0f)
+                    headerOffset = newOffset
+                    val consumedY = newOffset - oldOffset
+                    return Offset(0f, consumedY)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                // 手指向下划（页面内容向上滚动），子列表触顶后拉回封面区
+                if (available.y > 0f && maxScrollPx > 0f && headerOffset < 0f) {
+                    val oldOffset = headerOffset
+                    val newOffset = (oldOffset + available.y).coerceIn(-maxScrollPx, 0f)
+                    headerOffset = newOffset
+                    val consumedY = newOffset - oldOffset
+                    return Offset(0f, consumedY)
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                // 不拦截向上的惯性飞动，允许子列表（LazyColumn）接收完整的轻扫初速度。
+                // 子列表惯性滑动过程中的每一帧，由 onPreScroll 优先消耗位移以收起并折叠封面区；
+                // 封面完全折叠吸顶后，onPreScroll 自动停止消耗，后续帧的速度直接无缝驱动子列表继续快速滚动，中途绝不停滞。
+                return Velocity.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                // 向下快速轻扫时，列表惯性滑动到顶部（第 0 项）触顶后，将剩余惯性接力传递给封面区展开
+                if (available.y > 0f && maxScrollPx > 0f && headerOffset < 0f) {
+                    val animatable = Animatable(headerOffset)
+                    try {
+                        animatable.animateDecay(
+                            initialVelocity = available.y,
+                            animationSpec = exponentialDecay(),
+                        ) {
+                            if (value >= 0f) {
+                                headerOffset = 0f
+                                throw CancellationException()
+                            } else {
+                                headerOffset = value
                             }
                         }
-                        dragDistance = 0f
-                    },
-                    onDragCancel = { dragDistance = 0f },
-                )
-            },
-        contentPadding = PaddingValues(
-            start = DETAIL_HORIZONTAL_PADDING,
-            top = coverTop,
-            end = DETAIL_HORIZONTAL_PADDING,
-            bottom = 108.dp,
-        ),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+                    } catch (_: CancellationException) {
+                        headerOffset = 0f
+                    }
+                    // 衰减完成后若已接近顶部（展开超过 40%），平滑吸附完全展开到顶
+                    if (headerOffset > -maxScrollPx * 0.6f && headerOffset < 0f) {
+                        animatable.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) {
+                            headerOffset = value
+                        }
+                    }
+                    return Velocity(0f, available.y - animatable.velocity)
+                }
+                return Velocity.Zero
+            }
+        }
+    }
+
+    val headerDraggableState = rememberDraggableState { delta ->
+        if (maxScrollPx > 0f) {
+            headerOffset = (headerOffset + delta).coerceIn(-maxScrollPx, 0f)
+        }
+    }
+
+    val currentActiveListState = when (pagerState.currentPage) {
+        DETAIL_INFO_TAB -> infoListState
+        DETAIL_COMMENTS_TAB -> commentsListState
+        else -> catalogListState
+    }
+
+    val headerDraggable = Modifier.draggable(
+        state = headerDraggableState,
+        orientation = Orientation.Vertical,
+        onDragStopped = { velocity ->
+            if (maxScrollPx > 0f && velocity != 0f) {
+                coroutineScope.launch {
+                    if (velocity < 0f) {
+                        // 向上快速轻扫封面：折叠封面，若有剩余速度继续驱动子列表向下滚动
+                        var remainingVelocity = velocity
+                        val animatable = Animatable(headerOffset)
+                        try {
+                            animatable.animateDecay(
+                                initialVelocity = velocity,
+                                animationSpec = exponentialDecay(),
+                            ) {
+                                if (value <= -maxScrollPx) {
+                                    headerOffset = -maxScrollPx
+                                    remainingVelocity = this.velocity
+                                    throw CancellationException()
+                                } else {
+                                    headerOffset = value
+                                }
+                            }
+                        } catch (_: CancellationException) {
+                            headerOffset = -maxScrollPx
+                        }
+                        if (headerOffset > -maxScrollPx) {
+                            headerOffset = -maxScrollPx
+                        }
+                        if (remainingVelocity < -200f) {
+                            currentActiveListState.animateScrollBy(-remainingVelocity * 0.25f)
+                        }
+                    } else {
+                        // 向下快速轻扫：展开封面
+                        val animatable = Animatable(headerOffset)
+                        try {
+                            animatable.animateDecay(
+                                initialVelocity = velocity,
+                                animationSpec = exponentialDecay(),
+                            ) {
+                                if (value >= 0f) {
+                                    headerOffset = 0f
+                                    throw CancellationException()
+                                } else {
+                                    headerOffset = value
+                                }
+                            }
+                        } catch (_: CancellationException) {
+                            headerOffset = 0f
+                        }
+                        if (headerOffset > -maxScrollPx * 0.6f && headerOffset < 0f) {
+                            animatable.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) {
+                                headerOffset = value
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(surfaceColor),
     ) {
-        item(key = "summary") {
-            DetailSummary(
-                album = album,
-                detail = detail,
-                pageSummary = pageSummary,
-                showCover = showCover,
-                onAuthorSelected = onSearchRequested,
-            )
-        }
-        item(key = "actions") {
-            DetailActions(
-                detail = detail,
-                onCommentsSelected = { onTabSelected(DETAIL_COMMENTS_TAB) },
-                onLike = onLike,
-                onFavorite = onFavorite,
-                inBookshelf = inBookshelf,
-                onBookshelf = onBookshelf,
-                pendingAction = pendingAction,
-            )
-        }
-        item(key = "tabs") {
-            TabRowWithContour(
-                tabs = listOf(
-                    "介绍",
-                    "目录 ${chapters.size}",
-                    "评论 ${detail?.commentTotal ?: comments?.total ?: 0}",
-                ),
-                selectedTabIndex = selectedTab,
-                onTabSelected = onTabSelected,
-                modifier = Modifier.fillMaxWidth(),
-            )
+        // 背景与滚动内容层（挂载 layerBackdrop 供浮动顶栏采样，独立于顶栏之外避免自循环递归）
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
+        ) {
+            // 上半背景若隐若现的模糊封面与渐隐过渡（随滚动同步上滑并淡出）
+            val ambientAlpha = if (maxScrollPx > 0f) {
+                (1f + headerOffset / maxScrollPx).coerceIn(0f, 1f)
+            } else 1f
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(480.dp)
+                    .clipToBounds()
+                    .graphicsLayer {
+                        alpha = ambientAlpha
+                        translationY = headerOffset * 0.4f
+                    },
+            ) {
+                AsyncImage(
+                    model = ambientCoverRequest,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .scale(1.2f)
+                        .blur(40.dp)
+                        .graphicsLayer { alpha = 0.28f },
+                    contentScale = ContentScale.Crop,
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0.0f to Color.Transparent,
+                                0.45f to surfaceColor.copy(alpha = 0.2f),
+                                0.70f to surfaceColor.copy(alpha = 0.6f),
+                                0.92f to surfaceColor.copy(alpha = 0.92f),
+                                1.0f to surfaceColor,
+                            ),
+                        ),
+                )
+            }
+
+            // 自定义布局：封面区（向上折叠划出屏幕）、Tab 栏（吸顶在顶栏下方）、HorizontalPager（占满剩余高度）
+            Layout(
+                content = {
+                    // Measurable 0: 封面与操作按钮区（可向上折叠划出屏幕）
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = DETAIL_HORIZONTAL_PADDING)
+                            .onSizeChanged { size ->
+                                summaryHeightPx = size.height.toFloat()
+                            }
+                            .then(headerDraggable),
+                    ) {
+                        DetailSummary(
+                            album = album,
+                            detail = detail,
+                            showCover = showCover,
+                            onAuthorSelected = onSearchRequested,
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        DetailActions(
+                            detail = detail,
+                            onLike = onLike,
+                            onFavorite = onFavorite,
+                            inBookshelf = inBookshelf,
+                            onBookshelf = onBookshelf,
+                            onDownload = onDownload,
+                            downloadEnabled = downloadEnabled,
+                            showDownload = showDownload,
+                            pendingAction = pendingAction,
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
+                    // Measurable 1: Tab 栏（吸顶在顶栏下方）
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .zIndex(1f)
+                            .onSizeChanged { size ->
+                                tabBarHeightPx = size.height.toFloat()
+                            },
+                    ) {
+                        TabRowWithContour(
+                            tabs = listOf(
+                                "介绍",
+                                "目录 ${chapters.size}",
+                                "评论 ${detail?.commentTotal ?: comments?.total ?: 0}",
+                            ),
+                            selectedTabIndex = pagerState.currentPage,
+                            onTabSelected = { index ->
+                                coroutineScope.launch {
+                                    pagerState.springAnimateToPage(index)
+                                }
+                            },
+                            colors = TabRowDefaults.tabRowColors(
+                                backgroundColor = Color.Transparent,
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = DETAIL_HORIZONTAL_PADDING),
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    // Measurable 2: HorizontalPager 分页器
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clipToBounds(),
+                        pageNestedScrollConnection = childPagerNestedScrollConnection,
+                        key = { page -> page },
+                    ) { page ->
+                        when {
+                            state is AlbumDetailUiState.Loading -> DetailLoading()
+                            state is AlbumDetailUiState.Error -> DetailError(message = state.message, onRetry = onRetry)
+                            page == DETAIL_INFO_TAB && detail != null -> {
+                                LazyColumn(
+                                    state = infoListState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(
+                                        start = DETAIL_HORIZONTAL_PADDING,
+                                        end = DETAIL_HORIZONTAL_PADDING,
+                                        bottom = 108.dp,
+                                    ),
+                                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                                ) {
+                                    detailInfoItems(
+                                        detail = detail,
+                                        pageSummary = pageSummary,
+                                        onSearchRequested = onSearchRequested,
+                                    )
+                                }
+                            }
+                            page == DETAIL_CATALOG_TAB && detail != null -> {
+                                LazyColumn(
+                                    state = catalogListState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(
+                                        start = DETAIL_HORIZONTAL_PADDING,
+                                        end = DETAIL_HORIZONTAL_PADDING,
+                                        bottom = 108.dp,
+                                    ),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    catalogItems(
+                                        chapters = chapters,
+                                        reversed = catalogReversed,
+                                        lastReadChapterId = lastReadChapterId,
+                                        onToggleReverse = { catalogReversed = !catalogReversed },
+                                        onChapterSelected = onChapterSelected,
+                                    )
+                                }
+                            }
+                            page == DETAIL_COMMENTS_TAB -> {
+                                LazyColumn(
+                                    state = commentsListState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(
+                                        start = DETAIL_HORIZONTAL_PADDING,
+                                        end = DETAIL_HORIZONTAL_PADDING,
+                                        bottom = 108.dp,
+                                    ),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    commentsItems(
+                                        comments = comments,
+                                        onRetry = onLoadMoreComments,
+                                        onReplyComment = onReplyComment,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .nestedScroll(nestedScrollConnection),
+            ) { measurables, constraints ->
+                val topBarHeight = topBarHeightPx.roundToInt()
+                val coverTop = coverTopPx.roundToInt()
+
+                val summaryPlaceable = measurables[0].measure(
+                    constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity)
+                )
+                val sHeight = summaryPlaceable.height
+
+                val tabBarPlaceable = measurables[1].measure(
+                    constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity)
+                )
+                val tHeight = tabBarPlaceable.height
+
+                val pagerHeight = (constraints.maxHeight - topBarHeight - tHeight).coerceAtLeast(0)
+                val pagerPlaceable = measurables[2].measure(
+                    constraints.copy(minHeight = pagerHeight, maxHeight = pagerHeight)
+                )
+
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                    val currentOffset = headerOffset.roundToInt()
+                    val tabY = (coverTop + sHeight + currentOffset).coerceAtLeast(topBarHeight)
+                    val summaryY = tabY - sHeight
+                    val pagerY = tabY + tHeight
+
+                    summaryPlaceable.placeRelative(0, summaryY)
+                    tabBarPlaceable.placeRelative(0, tabY)
+                    pagerPlaceable.placeRelative(0, pagerY)
+                }
+            }
         }
 
-        when {
-            state is AlbumDetailUiState.Loading -> item(key = "loading") {
-                DetailLoading()
+        // 沉浸式悬浮顶栏（位于最顶层，折叠时平滑浮现毛玻璃底色与小标题）
+        val scrollProgress = if (maxScrollPx > 0f) (-headerOffset / maxScrollPx).coerceIn(0f, 1f) else 0f
+        if (scrollProgress > 0.005f) {
+            BlurredBar(
+                backdrop = backdrop,
+                style = topBarBlurStyle,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(topBarHeightDp)
+                    .zIndex(10f)
+                    .graphicsLayer { alpha = scrollProgress },
+            ) {}
+        }
+
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(top = statusBarPadding)
+                .height(64.dp)
+                .padding(horizontal = DETAIL_HORIZONTAL_PADDING)
+                .zIndex(11f),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LiquidGlassIconButton(
+                onClick = onBack,
+                backdrop = backdrop,
+                glassAlpha = animateTopBarGlassProgress(scrollProgress).value,
+                size = 44.dp,
+            ) {
+                Icon(
+                    imageVector = MiuixIcons.ChevronBackward,
+                    contentDescription = "返回",
+                    tint = MiuixTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .offset(x = (-1).dp),
+                )
             }
-            state is AlbumDetailUiState.Error -> item(key = "error") {
-                DetailError(message = state.message, onRetry = onRetry)
-            }
-            selectedTab == DETAIL_INFO_TAB && detail != null -> detailInfoItems(
-                detail = detail,
-                pageSummary = pageSummary,
-                onSearchRequested = onSearchRequested,
-            )
-            selectedTab == DETAIL_CATALOG_TAB && detail != null -> catalogItems(chapters, onChapterSelected)
-            selectedTab == DETAIL_COMMENTS_TAB -> commentsItems(
-                comments = comments,
-                onRetry = onLoadMoreComments,
-                onReplyComment = onReplyComment,
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = detailTitle,
+                style = MiuixTheme.textStyles.title3,
+                fontWeight = FontWeight.SemiBold,
+                color = MiuixTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .graphicsLayer { alpha = scrollProgress },
             )
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DetailSummary(
     album: HomeAlbum,
     detail: AlbumDetail?,
-    pageSummary: AlbumPageSummary,
     showCover: Boolean,
     onAuthorSelected: (String) -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
-        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        val context = LocalContext.current
+        val detailCoverRequest = remember(album.coverUrl) {
+            buildCoverRequest(context, album.coverUrl)
+        }
         Box(
             modifier = Modifier
                 .width(DETAIL_COVER_WIDTH)
@@ -1006,203 +1494,221 @@ private fun DetailSummary(
                 .clip(RoundedCornerShape(8.dp))
                 .background(MiuixTheme.colorScheme.surfaceContainerHigh),
         ) {
-            if (showCover) {
-                AsyncImage(
-                    model = buildCoverRequest(LocalContext.current, album.coverUrl),
-                    contentDescription = album.name,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            }
+            AsyncImage(
+                model = detailCoverRequest,
+                contentDescription = album.name,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        alpha = if (showCover) 1f else 0f
+                    },
+                contentScale = ContentScale.Crop,
+            )
         }
+        var titleExpanded by rememberSaveable(album.id) { mutableStateOf(false) }
+
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            DetailMetaLine(label = "JM车号", value = "JM${album.id}")
-            DetailMetaValues(
-                label = "作者",
-                values = detail?.authors?.takeIf { it.isNotEmpty() } ?: listOf(album.author),
-                onValueClick = onAuthorSelected,
+            // 漫画标题（主展示位，默认最多2行，点击可展开）
+            Text(
+                text = album.name,
+                modifier = Modifier.clickable { titleExpanded = !titleExpanded },
+                style = MiuixTheme.textStyles.title2,
+                fontWeight = FontWeight.Bold,
+                color = MiuixTheme.colorScheme.onSurface,
+                maxLines = if (titleExpanded) Int.MAX_VALUE else 2,
+                overflow = TextOverflow.Ellipsis,
             )
-            DetailMetaLine(
-                label = "页数",
-                value = pageSummary.summaryText(detail),
-            )
-            if (!detail?.series.isNullOrEmpty()) {
-                DetailMetaLine(label = "章节", value = "${detail.series.size} 话")
+
+            // 作者（简洁文本行展示，支持点击搜索）
+            val authors = (detail?.authors?.takeIf { it.isNotEmpty() } ?: listOf(album.author))
+                .distinct()
+                .filter(String::isNotBlank)
+            if (authors.isNotEmpty()) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    authors.forEach { author ->
+                        Text(
+                            text = author,
+                            modifier = Modifier.clickable { onAuthorSelected(author) },
+                            style = MiuixTheme.textStyles.footnote1,
+                            fontWeight = FontWeight.Medium,
+                            color = MiuixTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+
+            // 规格与数据胶囊徽章行（车号、观看次数）
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                DetailMiniBadge(text = "JM${album.id}")
+                if ((detail?.totalViews ?: 0) > 0) {
+                    DetailMiniBadge(text = "${compactCount(detail?.totalViews)} 次观看")
+                }
             }
         }
     }
 }
 
 @Composable
-private fun DetailMetaLine(label: String, value: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+private fun DetailMiniBadge(text: String) {
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = MiuixTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f),
+    ) {
         Text(
-            text = label,
+            text = text,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             style = MiuixTheme.textStyles.footnote2,
             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            maxLines = 1,
         )
-        Text(
-            text = value,
-            style = MiuixTheme.textStyles.body2,
-            color = MiuixTheme.colorScheme.onSurface,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
-private fun DetailMetaValues(
-    label: String,
-    values: List<String>,
-    onValueClick: (String) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(
-            text = label,
-            style = MiuixTheme.textStyles.footnote2,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-        )
-        values.distinct().filter(String::isNotBlank).forEach { value ->
-            Text(
-                text = value,
-                modifier = Modifier.clickable { onValueClick(value) },
-                style = MiuixTheme.textStyles.body2,
-                color = MiuixTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
     }
 }
 
 @Composable
 private fun DetailActions(
     detail: AlbumDetail?,
-    onCommentsSelected: () -> Unit,
     onLike: () -> Unit,
     onFavorite: () -> Unit,
     inBookshelf: Boolean,
     onBookshelf: () -> Unit,
+    onDownload: () -> Unit,
+    downloadEnabled: Boolean,
+    showDownload: Boolean,
     pendingAction: DetailAccountAction?,
 ) {
-    Row(
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        cornerRadius = 14.dp,
+        insideMargin = PaddingValues(horizontal = 6.dp, vertical = 10.dp),
     ) {
-        DetailAction(
-            icon = if (detail?.liked == true) MiuixIcons.FavoritesFill else MiuixIcons.Favorites,
-            value = compactCount(detail?.likes),
-            label = "喜欢",
-            enabled = detail != null && detail.liked != true && pendingAction == null,
-            selected = detail?.liked == true,
-            loading = pendingAction == DetailAccountAction.LIKE,
-            onClick = onLike,
-        )
-        DetailAction(
-            icon = MiuixIcons.Edit,
-            value = compactCount(detail?.commentTotal),
-            label = "评论",
-            enabled = true,
-            onClick = onCommentsSelected,
-        )
-        DetailAction(
-            icon = MiuixIcons.Play,
-            value = compactCount(detail?.totalViews),
-            label = "观看",
-            enabled = false,
-        )
-        DetailAction(
-            icon = if (detail?.isFavorite == true) MiuixIcons.FavoritesFill else MiuixIcons.Favorites,
-            value = if (detail?.isFavorite == true) "已收藏" else "收藏",
-            label = "收藏",
-            enabled = detail != null && pendingAction == null,
-            selected = detail?.isFavorite == true,
-            loading = pendingAction == DetailAccountAction.FAVORITE,
-            onClick = onFavorite,
-        )
-        DetailAction(
-            icon = MiuixIcons.Notes,
-            value = if (inBookshelf) "已加入" else "加入",
-            label = "书架",
-            enabled = detail != null,
-            selected = inBookshelf,
-            selectedPrimary = true,
-            onClick = onBookshelf,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            DetailActionItem(
+                modifier = Modifier.weight(1f),
+                icon = if (detail?.liked == true) MiuixIcons.FavoritesFill else MiuixIcons.Favorites,
+                text = detail?.likes?.takeIf { it > 0 }?.let(::compactCount)
+                    ?: if (detail?.liked == true) "已喜欢" else "喜欢",
+                contentDescription = if (detail?.liked == true) "已喜欢" else "喜欢",
+                enabled = detail != null && detail.liked != true && pendingAction == null,
+                selected = detail?.liked == true,
+                tintColor = if (detail?.liked == true) Color(0xFFE53935) else null,
+                loading = pendingAction == DetailAccountAction.LIKE,
+                onClick = onLike,
+            )
+            DetailActionDivider()
+            DetailActionItem(
+                modifier = Modifier.weight(1f),
+                icon = MiuixIcons.Store,
+                text = if (detail?.isFavorite == true) "已收藏" else "收藏",
+                contentDescription = if (detail?.isFavorite == true) "已收藏" else "收藏",
+                enabled = detail != null && pendingAction == null,
+                selected = detail?.isFavorite == true,
+                tintColor = if (detail?.isFavorite == true) Color(0xFFFFA000) else null,
+                loading = pendingAction == DetailAccountAction.FAVORITE,
+                onClick = onFavorite,
+            )
+            DetailActionDivider()
+            DetailActionItem(
+                modifier = Modifier.weight(1f),
+                icon = MiuixIcons.Notes,
+                text = if (inBookshelf) "已在书架" else "加入书架",
+                contentDescription = if (inBookshelf) "已在书架" else "加入书架",
+                enabled = detail != null,
+                selected = inBookshelf,
+                selectedPrimary = true,
+                onClick = onBookshelf,
+            )
+            if (showDownload) {
+                DetailActionDivider()
+                DetailActionItem(
+                    modifier = Modifier.weight(1f),
+                    icon = MiuixIcons.Download,
+                    text = "下载",
+                    contentDescription = "下载",
+                    enabled = downloadEnabled,
+                    onClick = onDownload,
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun DetailAction(
+private fun DetailActionDivider() {
+    Box(
+        modifier = Modifier
+            .width(1.dp)
+            .height(20.dp)
+            .background(MiuixTheme.colorScheme.outline.copy(alpha = 0.2f)),
+    )
+}
+
+@Composable
+private fun DetailActionItem(
+    modifier: Modifier = Modifier,
     icon: ImageVector,
-    value: String,
-    label: String,
+    text: String,
+    contentDescription: String,
     enabled: Boolean,
     selected: Boolean = false,
     selectedPrimary: Boolean = false,
+    tintColor: Color? = null,
     loading: Boolean = false,
     onClick: () -> Unit = {},
 ) {
-    val targetContentColor = if (selected) {
-        if (selectedPrimary) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.error
-    } else if (enabled) {
-        MiuixTheme.colorScheme.onSurface
-    } else {
-        MiuixTheme.colorScheme.onSurfaceVariantSummary
+    val targetContentColor = when {
+        tintColor != null -> tintColor
+        selected && selectedPrimary -> MiuixTheme.colorScheme.primary
+        selected -> MiuixTheme.colorScheme.primary
+        enabled -> MiuixTheme.colorScheme.onSurface
+        else -> MiuixTheme.colorScheme.onSurfaceVariantSummary
     }
     val contentColor by animateColorAsState(targetContentColor, label = "DetailActionColor")
-    val iconScale by animateFloatAsState(if (selected) 1.12f else 1f, label = "DetailActionScale")
+
     Column(
-        modifier = Modifier.width(62.dp),
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled && !loading, onClick = onClick)
+            .padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        IconButton(
-            onClick = onClick,
-            enabled = enabled,
-            backgroundColor = if (selected) {
-                if (selectedPrimary) {
-                    MiuixTheme.colorScheme.primaryContainer
-                } else {
-                    MiuixTheme.colorScheme.errorContainer
-                }
-            } else {
-                MiuixTheme.colorScheme.surfaceContainerHigh
-            },
-            minWidth = 42.dp,
-            minHeight = 42.dp,
-        ) {
-            if (loading) {
-                CircularProgressIndicator(size = 20.dp, strokeWidth = 3.dp)
-            } else {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    modifier = Modifier
-                        .size(20.dp)
-                        .graphicsLayer {
-                            scaleX = iconScale
-                            scaleY = iconScale
-                        },
-                    tint = contentColor,
-                )
+        if (loading) {
+            Box(
+                modifier = Modifier.size(24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(size = 20.dp, strokeWidth = 2.5.dp)
             }
+        } else {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                modifier = Modifier.size(22.dp),
+                tint = contentColor,
+            )
         }
-        Spacer(modifier = Modifier.height(5.dp))
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = value,
+            text = text,
             style = MiuixTheme.textStyles.footnote1,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             color = contentColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = label,
-            style = MiuixTheme.textStyles.footnote2,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
         )
     }
 }
@@ -1412,58 +1918,156 @@ private fun androidx.compose.foundation.lazy.LazyListScope.detailInfoItems(
     onSearchRequested: (String) -> Unit,
 ) {
     item(key = "description") {
-        DetailSection(title = "漫画介绍") {
-            Text(
-                text = detail.description
-                    ?.decodeHtml()
-                    ?.trim()
-                    ?.takeIf { it.isNotBlank() }
-                    ?: "暂无介绍",
-                style = MiuixTheme.textStyles.body2,
-                color = MiuixTheme.colorScheme.onSurface,
-            )
+        val rawDescription = detail.description
+            ?.decodeHtml()
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: "暂无介绍"
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = 14.dp,
+            insideMargin = PaddingValues(16.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "漫画介绍",
+                    style = MiuixTheme.textStyles.title3,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MiuixTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = rawDescription,
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onSurface,
+                    lineHeight = 22.sp,
+                )
+            }
         }
     }
-    item(key = "pages") {
-        DetailSection(title = "章节与页数") {
-            Text(
-                text = pageSummary.sectionText(detail),
-                style = MiuixTheme.textStyles.body2,
-                color = MiuixTheme.colorScheme.onSurface,
-            )
+
+    if (detail.tags.isNotEmpty() || detail.works.isNotEmpty() || detail.actors.isNotEmpty()) {
+        item(key = "tags-card") {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 14.dp,
+                insideMargin = PaddingValues(16.dp),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    if (detail.tags.isNotEmpty()) {
+                        DetailChipSection(
+                            title = "分类与标签",
+                            values = detail.tags,
+                            onValueClick = onSearchRequested,
+                        )
+                    }
+                    if (detail.works.isNotEmpty()) {
+                        DetailChipSection(
+                            title = "系列作品",
+                            values = detail.works,
+                            onValueClick = onSearchRequested,
+                        )
+                    }
+                    if (detail.actors.isNotEmpty()) {
+                        DetailChipSection(
+                            title = "出场人物",
+                            values = detail.actors,
+                            onValueClick = onSearchRequested,
+                        )
+                    }
+                }
+            }
         }
     }
-    if (detail.tags.isNotEmpty()) {
-        item(key = "tags") {
-            DetailLabels(
-                title = "标签",
-                values = detail.tags,
-                onValueClick = onSearchRequested,
-            )
+
+    item(key = "specs-card") {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = 14.dp,
+            insideMargin = PaddingValues(16.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "基本信息",
+                    style = MiuixTheme.textStyles.title3,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MiuixTheme.colorScheme.onSurface,
+                )
+                DetailSpecRow(label = "作品编号", value = "JM${detail.id}")
+                DetailSpecRow(label = "章节规格", value = pageSummary.sectionText(detail))
+                if ((detail.likes ?: 0) > 0) {
+                    DetailSpecRow(label = "累计好评", value = "${detail.likes} 人喜欢")
+                }
+                if ((detail.totalViews ?: 0) > 0) {
+                    DetailSpecRow(label = "累计阅读", value = "${compactCount(detail.totalViews)} 次观看")
+                }
+            }
         }
     }
-    if (detail.works.isNotEmpty()) {
-        item(key = "works") {
-            DetailLabels(
-                title = "作品",
-                values = detail.works,
-                onValueClick = onSearchRequested,
-            )
-        }
+}
+
+@Composable
+private fun DetailSpecRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MiuixTheme.textStyles.footnote1,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+        Text(
+            text = value,
+            style = MiuixTheme.textStyles.body2,
+            fontWeight = FontWeight.Medium,
+            color = MiuixTheme.colorScheme.onSurface,
+        )
     }
-    if (detail.actors.isNotEmpty()) {
-        item(key = "actors") {
-            DetailLabels(
-                title = "角色",
-                values = detail.actors,
-                onValueClick = onSearchRequested,
-            )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DetailChipSection(
+    title: String,
+    values: List<String>,
+    onValueClick: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = title,
+            style = MiuixTheme.textStyles.footnote2,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            values.distinct().filter(String::isNotBlank).forEach { value ->
+                Surface(
+                    onClick = { onValueClick(value) },
+                    shape = RoundedCornerShape(8.dp),
+                    color = MiuixTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.8f),
+                ) {
+                    Text(
+                        text = "# $value",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        style = MiuixTheme.textStyles.footnote1,
+                        fontWeight = FontWeight.Medium,
+                        color = MiuixTheme.colorScheme.onSurface,
+                    )
+                }
+            }
         }
     }
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.catalogItems(
     chapters: List<AlbumChapter>,
+    reversed: Boolean,
+    lastReadChapterId: String?,
+    onToggleReverse: () -> Unit,
     onChapterSelected: (AlbumChapter) -> Unit,
 ) {
     if (chapters.isEmpty()) {
@@ -1476,16 +2080,70 @@ private fun androidx.compose.foundation.lazy.LazyListScope.catalogItems(
                 textAlign = TextAlign.Center,
             )
         }
+        return
     }
+
+    item(key = "catalog-toolbar") {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "共 ${chapters.size} 话",
+                style = MiuixTheme.textStyles.body2,
+                fontWeight = FontWeight.SemiBold,
+                color = MiuixTheme.colorScheme.onSurface,
+            )
+            Surface(
+                onClick = onToggleReverse,
+                shape = RoundedCornerShape(6.dp),
+                color = MiuixTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Sort,
+                        contentDescription = if (reversed) "倒序" else "正序",
+                        modifier = Modifier.size(16.dp),
+                        tint = MiuixTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = if (reversed) "倒序" else "正序",
+                        style = MiuixTheme.textStyles.footnote2,
+                        fontWeight = FontWeight.Medium,
+                        color = MiuixTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+    }
+
+    val displayChapters = if (reversed) chapters.asReversed() else chapters
     itemsIndexed(
-        items = chapters,
+        items = displayChapters,
         key = { _, chapter -> chapter.id },
-    ) { index, chapter ->
+    ) { displayIndex, chapter ->
+        val originalIndex = if (reversed) chapters.size - 1 - displayIndex else displayIndex
+        val isLastRead = lastReadChapterId == chapter.id
+
         Surface(
             onClick = { onChapterSelected(chapter) },
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            color = MiuixTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(12.dp),
+            color = if (isLastRead) {
+                MiuixTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+            } else {
+                MiuixTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f)
+            },
+            border = if (isLastRead) {
+                BorderStroke(1.dp, MiuixTheme.colorScheme.primary.copy(alpha = 0.6f))
+            } else null,
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -1494,16 +2152,36 @@ private fun androidx.compose.foundation.lazy.LazyListScope.catalogItems(
             ) {
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(
-                        text = chapter.displayName(index),
-                        style = MiuixTheme.textStyles.body2,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MiuixTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = chapter.displayName(originalIndex),
+                            style = MiuixTheme.textStyles.body2,
+                            fontWeight = if (isLastRead) FontWeight.Bold else FontWeight.SemiBold,
+                            color = if (isLastRead) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        if (isLastRead) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MiuixTheme.colorScheme.primary,
+                            ) {
+                                Text(
+                                    text = "上次读到",
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    style = MiuixTheme.textStyles.footnote2,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MiuixTheme.colorScheme.onPrimary,
+                                )
+                            }
+                        }
+                    }
                     Text(
                         text = "JM${chapter.id}",
                         style = MiuixTheme.textStyles.footnote2,
@@ -1512,9 +2190,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.catalogItems(
                 }
                 Icon(
                     imageVector = MiuixIcons.Play,
-                    contentDescription = "观看${chapter.displayName(index)}",
+                    contentDescription = "观看${chapter.displayName(originalIndex)}",
                     modifier = Modifier.size(20.dp),
-                    tint = MiuixTheme.colorScheme.primary,
+                    tint = if (isLastRead) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 )
             }
         }
@@ -1577,54 +2255,6 @@ private fun androidx.compose.foundation.lazy.LazyListScope.commentsItems(
 }
 
 @Composable
-private fun DetailSection(
-    title: String,
-    content: @Composable () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = title,
-            style = MiuixTheme.textStyles.title3,
-            fontWeight = FontWeight.SemiBold,
-            color = MiuixTheme.colorScheme.onSurface,
-        )
-        content()
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun DetailLabels(
-    title: String,
-    values: List<String>,
-    onValueClick: ((String) -> Unit)? = null,
-) {
-    DetailSection(title = title) {
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            values.distinct().forEach { value ->
-                Surface(
-                    onClick = { onValueClick?.invoke(value) },
-                    enabled = onValueClick != null,
-                    shape = RoundedCornerShape(8.dp),
-                    color = MiuixTheme.colorScheme.primaryContainer,
-                ) {
-                    Text(
-                        text = value,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        style = MiuixTheme.textStyles.footnote1,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MiuixTheme.colorScheme.onPrimaryContainer,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun CommentCard(
     comment: CommentItem,
     onReply: (CommentItem) -> Unit,
@@ -1634,68 +2264,95 @@ private fun CommentCard(
         targetValue = if (repliesExpanded) 180f else 0f,
         label = "CommentReplyArrow",
     )
+    val username = comment.username?.takeIf { it.isNotBlank() } ?: "匿名用户"
+    val initial = username.firstOrNull()?.uppercase() ?: "匿"
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        cornerRadius = 8.dp,
+        cornerRadius = 14.dp,
         insideMargin = PaddingValues(14.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Top,
         ) {
-            Text(
-                text = comment.username?.takeIf { it.isNotBlank() } ?: "匿名用户",
-                modifier = Modifier.clickable { onReply(comment) },
-                style = MiuixTheme.textStyles.body2,
-                fontWeight = FontWeight.SemiBold,
-                color = MiuixTheme.colorScheme.onSurface,
-            )
-            if ((comment.likes ?: 0) > 0) {
-                Text(
-                    text = "${comment.likes} 赞",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = comment.content?.decodeHtml()?.trim().orEmpty().ifBlank { "评论内容为空" },
-            modifier = Modifier.clickable { onReply(comment) },
-            style = MiuixTheme.textStyles.body2,
-            color = MiuixTheme.colorScheme.onSurface,
-        )
-        if (comment.replies.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(
-                modifier = Modifier
-                    .clickable { repliesExpanded = !repliesExpanded }
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Surface(
+                modifier = Modifier.size(36.dp),
+                shape = CircleShape,
+                color = MiuixTheme.colorScheme.primaryContainer,
             ) {
-                Text(
-                    text = "${comment.replies.size} 条回复",
-                    style = MiuixTheme.textStyles.footnote1,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MiuixTheme.colorScheme.primary,
-                )
-                Icon(
-                    imageVector = MiuixIcons.ExpandMore,
-                    contentDescription = if (repliesExpanded) "收起回复" else "展开回复",
-                    modifier = Modifier
-                        .size(18.dp)
-                        .graphicsLayer { rotationZ = replyArrowRotation },
-                    tint = MiuixTheme.colorScheme.primary,
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = initial,
+                        style = MiuixTheme.textStyles.footnote1,
+                        fontWeight = FontWeight.Bold,
+                        color = MiuixTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
             }
-            AnimatedVisibility(
-                visible = repliesExpanded,
-                enter = expandVertically(animationSpec = tween(260)) + fadeIn(tween(180)),
-                exit = shrinkVertically(animationSpec = tween(210)) + fadeOut(tween(120)),
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                CommentReplies(replies = comment.replies, onReply = onReply)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = username,
+                        modifier = Modifier.clickable { onReply(comment) },
+                        style = MiuixTheme.textStyles.body2,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MiuixTheme.colorScheme.onSurface,
+                    )
+                    if ((comment.likes ?: 0) > 0) {
+                        Text(
+                            text = "${comment.likes} 赞",
+                            style = MiuixTheme.textStyles.footnote2,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                }
+                Text(
+                    text = comment.content?.decodeHtml()?.trim().orEmpty().ifBlank { "评论内容为空" },
+                    modifier = Modifier.clickable { onReply(comment) },
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onSurface,
+                    lineHeight = 20.sp,
+                )
+                if (comment.replies.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .clickable { repliesExpanded = !repliesExpanded }
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "${comment.replies.size} 条回复",
+                            style = MiuixTheme.textStyles.footnote1,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MiuixTheme.colorScheme.primary,
+                        )
+                        Icon(
+                            imageVector = MiuixIcons.ExpandMore,
+                            contentDescription = if (repliesExpanded) "收起回复" else "展开回复",
+                            modifier = Modifier
+                                .size(18.dp)
+                                .graphicsLayer { rotationZ = replyArrowRotation },
+                            tint = MiuixTheme.colorScheme.primary,
+                        )
+                    }
+                    AnimatedVisibility(
+                        visible = repliesExpanded,
+                        enter = expandVertically(animationSpec = tween(260)) + fadeIn(tween(180)),
+                        exit = shrinkVertically(animationSpec = tween(210)) + fadeOut(tween(120)),
+                    ) {
+                        CommentReplies(replies = comment.replies, onReply = onReply)
+                    }
+                }
             }
         }
     }
@@ -2128,10 +2785,15 @@ private fun compactCount(value: Int?): String {
     }
 }
 
+private val DetailSpringSpec = spring<Float>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = 280f,
+    visibilityThreshold = 0.0001f,
+)
 private val DetailTransitionEasing = CubicBezierEasing(0.18f, 0.82f, 0.16f, 1f)
 private val DETAIL_HORIZONTAL_PADDING = 16.dp
-private val DETAIL_COVER_WIDTH = 128.dp
-private val DETAIL_COVER_HEIGHT = 170.6667.dp
+private val DETAIL_COVER_WIDTH = 105.dp
+private val DETAIL_COVER_HEIGHT = 140.dp
 private const val DETAIL_INFO_TAB = 0
 private const val DETAIL_CATALOG_TAB = 1
 private const val DETAIL_COMMENTS_TAB = 2

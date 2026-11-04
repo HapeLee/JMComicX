@@ -1,10 +1,5 @@
 package dev.jmx.client
 
-import androidx.compose.animation.core.EaseInOut
-import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.MutatePriority
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
@@ -19,7 +14,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 import top.yukonga.miuix.kmp.nav.core.NavKey
 
 // 构造器是 private 的（只允许经下方工厂建路由），但 data class 生成的 copy() 默认是 public，
@@ -75,26 +69,8 @@ internal class JmxMainPagerState(
         navigationJob = coroutineScope.launch {
             val currentJob = coroutineContext.job
             try {
-                pagerState.scroll(MutatePriority.UserInput) {
-                    val distance = abs(targetPage - pagerState.currentPage).coerceAtLeast(2)
-                    val durationMillis = distance * 100 + 100
-                    val pageSize = pagerState.layoutInfo.pageSize + pagerState.layoutInfo.pageSpacing
-                    val distanceInPages = targetPage -
-                        pagerState.currentPage -
-                        pagerState.currentPageOffsetFraction
-                    val scrollPixels = distanceInPages * pageSize
-                    var previousValue = 0f
-                    animate(
-                        initialValue = 0f,
-                        targetValue = scrollPixels,
-                        animationSpec = tween(durationMillis = durationMillis, easing = EaseInOut),
-                    ) { currentValue, _ ->
-                        previousValue += scrollBy(currentValue - previousValue)
-                    }
-                }
-                if (pagerState.currentPage != targetPage) {
-                    pagerState.scrollToPage(targetPage)
-                }
+                // 官方动画可被手势立即打断，也会处理远距离跳页，不再逐像素手写滚动后补跳。
+                pagerState.animateScrollToPage(targetPage)
             } finally {
                 if (navigationJob == currentJob) {
                     navigating = false

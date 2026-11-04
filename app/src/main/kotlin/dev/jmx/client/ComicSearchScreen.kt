@@ -1,25 +1,25 @@
 package dev.jmx.client
 
-import android.view.Gravity
-import android.view.View
-import android.view.ViewGroup
-import android.view.Window
-import android.view.WindowManager
-import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,57 +28,70 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.drawable.toDrawable
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsAnimationCompat
-import androidx.core.view.WindowInsetsCompat
 import com.github.houbb.opencc4j.util.ZhConverterUtil
 import dev.jmx.client.core.api.AlbumDetail
 import dev.jmx.client.core.api.SearchQueryComposer
 import dev.jmx.client.core.protocol.JmxMagicConstants
 import dev.jmx.client.core.result.JmxResult
+import dev.jmx.client.effect.BlurredBar
+import dev.jmx.client.effect.TopBarBlurStyle
+import dev.jmx.client.effect.liquid.BindTopBarGlassScroll
+import dev.jmx.client.effect.liquid.GlassTopBarHost
+import dev.jmx.client.effect.liquid.LiquidGlassCapsule
+import dev.jmx.client.effect.liquid.LiquidGlassIconButton
+import dev.jmx.client.effect.liquid.currentTopBarGlassAlpha
+import dev.jmx.client.effect.rememberBarBackdrop
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -86,44 +99,56 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Badge
 import top.yukonga.miuix.kmp.basic.BadgedBox
-import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
+import top.yukonga.miuix.kmp.basic.DropdownDefaults
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
-import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.InputField
-import top.yukonga.miuix.kmp.basic.SearchBar
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.basic.Check
 import top.yukonga.miuix.kmp.icon.basic.Search
+import top.yukonga.miuix.kmp.icon.extended.ChevronBackward
+import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Filter
+import top.yukonga.miuix.kmp.icon.extended.Recent
 import top.yukonga.miuix.kmp.icon.extended.Sort
-import top.yukonga.miuix.kmp.menu.WindowIconDropdownMenu
+import top.yukonga.miuix.kmp.icon.extended.Tune
+import top.yukonga.miuix.kmp.popup.WindowDropdownPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
+import dev.jmx.client.effect.liquid.GlassTopBarIcon as Icon
+
+private const val INITIAL_SEARCH_FOCUS_GUARD_MILLIS = 320L
+private val JM_SEARCH_ID_REGEX = Regex("(?i)^(?:JM)?\\s*(\\d+)$")
 
 @Composable
 internal fun ComicSearchScreen(
     homeRepository: HomeRepository,
     initialQuery: String? = null,
-    manageSystemBar: Boolean = true,
+    outerPadding: PaddingValues = PaddingValues(),
+    topBarBlurStyle: TopBarBlurStyle = TopBarBlurStyle.GAUSSIAN,
     liftedAlbumId: String?,
     onDismiss: () -> Unit,
     onAlbumSelected: (HomeAlbum, Rect?) -> Unit,
+    favoriteAlbumIds: Set<String> = emptySet(),
+    bookshelfAlbumIds: Set<String> = emptySet(),
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
+    val coroutineScope = rememberCoroutineScope()
     val repository = remember(homeRepository) { ComicSearchRepository(homeRepository) }
     val historyStore = remember(context) { SearchHistoryStore(context) }
-    val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var query by remember { mutableStateOf("") }
     var submittedQuery by remember { mutableStateOf<String?>(null) }
     var searchRequestId by remember { mutableIntStateOf(0) }
@@ -131,105 +156,15 @@ internal fun ComicSearchScreen(
     var history by remember(historyStore) { mutableStateOf(historyStore.load()) }
     var deletingHistory by rememberSaveable { mutableStateOf(false) }
     var initialQueryConsumed by rememberSaveable(initialQuery) { mutableStateOf(false) }
-    var inputEnabled by rememberSaveable(initialQuery) { mutableStateOf(initialQuery.isNullOrBlank()) }
     var inputMode by rememberSaveable(initialQuery) { mutableStateOf(initialQuery.isNullOrBlank()) }
     var searchOrder by rememberSaveable { mutableStateOf(ComicSearchOrder.LATEST) }
     var tagFilter by remember { mutableStateOf(SearchTagFilter()) }
     var showTagFilter by remember { mutableStateOf(false) }
     val tagStore = remember(context) { SearchTagStore(context) }
     var userTags by remember(tagStore) { mutableStateOf(tagStore.load()) }
-    val coroutineScope = rememberCoroutineScope()
-    val searchSurfaceColor = MiuixTheme.colorScheme.surface
-    val activity = context.findActivity()
 
-    SideEffect {
-        val window = activity?.window
-        if (manageSystemBar && window != null) {
-            applySearchSystemBarAppearance(window, searchSurfaceColor.toArgb(), searchSurfaceColor.luminance() > 0.5f)
-        }
-    }
-
-    DisposableEffect(context, activity, searchSurfaceColor, manageSystemBar) {
-        val window = activity?.window
-        val decor = window?.decorView as? ViewGroup
-        if (!manageSystemBar || window == null || decor == null) {
-            return@DisposableEffect onDispose {}
-        }
-
-        val color = searchSurfaceColor.toArgb()
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
-        val previousLightStatusBars = controller.isAppearanceLightStatusBars
-        val previousSoftInputMode = window.attributes.softInputMode
-        @Suppress("DEPRECATION")
-        val previousStatusBarColor = window.statusBarColor
-        val scrim = View(context).apply {
-            setBackgroundColor(color)
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }
-        val initialStatusBarHeight = ViewCompat.getRootWindowInsets(decor)
-            ?.getInsets(WindowInsetsCompat.Type.statusBars())
-            ?.top
-            ?: 0
-        decor.addView(
-            scrim,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                initialStatusBarHeight,
-                Gravity.TOP,
-            ),
-        )
-        ViewCompat.setOnApplyWindowInsetsListener(scrim) { view, insets ->
-            val statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-            if (view.layoutParams.height != statusBarHeight) {
-                view.layoutParams = view.layoutParams.apply { height = statusBarHeight }
-            }
-            insets
-        }
-        ViewCompat.requestApplyInsets(scrim)
-        window.setBackgroundDrawable(color.toDrawable())
-        @Suppress("DEPRECATION")
-        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        val lightStatusBars = searchSurfaceColor.luminance() > 0.5f
-        val insetsAnimationCallback = object : WindowInsetsAnimationCompat.Callback(
-            WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE,
-        ) {
-            override fun onPrepare(animation: WindowInsetsAnimationCompat) {
-                applySearchSystemBarAppearance(window, color, lightStatusBars)
-            }
-
-            override fun onStart(
-                animation: WindowInsetsAnimationCompat,
-                bounds: WindowInsetsAnimationCompat.BoundsCompat,
-            ): WindowInsetsAnimationCompat.BoundsCompat {
-                applySearchSystemBarAppearance(window, color, lightStatusBars)
-                return bounds
-            }
-
-            override fun onProgress(
-                insets: WindowInsetsCompat,
-                runningAnimations: List<WindowInsetsAnimationCompat>,
-            ): WindowInsetsCompat {
-                applySearchSystemBarAppearance(window, color, lightStatusBars)
-                return insets
-            }
-
-            override fun onEnd(animation: WindowInsetsAnimationCompat) {
-                applySearchSystemBarAppearance(window, color, lightStatusBars)
-            }
-        }
-        ViewCompat.setWindowInsetsAnimationCallback(window.decorView, insetsAnimationCallback)
-        applySearchSystemBarAppearance(window, color, lightStatusBars)
-
-        onDispose {
-            ViewCompat.setWindowInsetsAnimationCallback(window.decorView, null)
-            ViewCompat.setOnApplyWindowInsetsListener(scrim, null)
-            decor.removeView(scrim)
-            window.setSoftInputMode(previousSoftInputMode)
-            @Suppress("DEPRECATION")
-            window.statusBarColor = previousStatusBarColor
-            controller.isAppearanceLightStatusBars = previousLightStatusBars
-        }
-    }
+    val searchBackdrop = rememberBarBackdrop()
+    val searchScrollBehavior = MiuixScrollBehavior()
 
     fun dismissSearch() {
         focusManager.clearFocus(force = true)
@@ -274,16 +209,13 @@ internal fun ComicSearchScreen(
             initialQueryConsumed = true
             submitSearch(value)
             delay(INITIAL_SEARCH_FOCUS_GUARD_MILLIS)
-            inputEnabled = true
         }
     }
 
     LaunchedEffect(submittedQuery, searchRequestId, searchOrder, tagFilter, repository) {
         val baseQuery = submittedQuery
-        // 允许“仅标签”的过滤搜索：没有关键词但存在包含标签时也发起。
         if (baseQuery == null && !tagFilter.enabled) return@LaunchedEffect
         val queryText = baseQuery.orEmpty()
-        val displayQuery = queryText.ifBlank { tagFilterSummary(tagFilter) }
         state = ComicSearchUiState.Loading
         when (val result = repository.search(
             queryText,
@@ -299,13 +231,13 @@ internal fun ComicSearchScreen(
                     nextPage = 2,
                     order = searchOrder,
                     tagFilter = tagFilter,
+                    isLoadingMore = false,
                     endReached = true,
                 )
-                openAlbum(result.album, null)
             }
             is ComicSearchResult.Page -> {
-                state = if (result.albums.isEmpty() && result.endReached) {
-                    ComicSearchUiState.Empty(displayQuery)
+                state = if (result.albums.isEmpty()) {
+                    ComicSearchUiState.Empty(queryText.ifBlank { tagFilterSummary(tagFilter) })
                 } else {
                     ComicSearchUiState.Content(
                         query = queryText,
@@ -314,187 +246,194 @@ internal fun ComicSearchScreen(
                         nextPage = 2,
                         order = searchOrder,
                         tagFilter = tagFilter,
+                        isLoadingMore = false,
                         endReached = result.endReached,
                     )
                 }
             }
-            is ComicSearchResult.Error -> state = ComicSearchUiState.Error(result.message)
+            is ComicSearchResult.Error -> {
+                state = ComicSearchUiState.Error(result.message)
+            }
         }
     }
 
     fun loadMore() {
-        val content = state as? ComicSearchUiState.Content ?: return
-        if (content.isLoadingMore || content.endReached) return
-        state = content.copy(isLoadingMore = true, loadMoreError = null)
+        val current = state as? ComicSearchUiState.Content ?: return
+        if (current.isLoadingMore || current.endReached) return
+        state = current.copy(isLoadingMore = true, loadMoreError = null)
         coroutineScope.launch {
-            val result = repository.search(
-                query = content.query,
-                page = content.nextPage,
-                order = content.order,
-                tagFilter = content.tagFilter,
-            )
-            val latest = state as? ComicSearchUiState.Content
-            if (
-                latest?.query != content.query ||
-                latest.order != content.order ||
-                latest.tagFilter != content.tagFilter
-            ) return@launch
-            state = when (result) {
+            when (val result = repository.search(
+                current.query,
+                page = current.nextPage,
+                order = current.order,
+                tagFilter = current.tagFilter,
+            )) {
                 is ComicSearchResult.Page -> {
-                    val mergedPage = mergeSearchAlbums(
-                        existing = latest.albums,
+                    val merged = mergeSearchAlbums(
+                        existing = current.albums,
                         incoming = result.albums,
                         sourceEndReached = result.endReached,
                     )
-                    latest.copy(
-                        albums = mergedPage.albums,
-                        total = result.total ?: latest.total,
-                        nextPage = latest.nextPage + 1,
+                    val latest = state as? ComicSearchUiState.Content ?: return@launch
+                    state = latest.copy(
+                        albums = merged.albums,
+                        nextPage = current.nextPage + 1,
                         isLoadingMore = false,
-                        endReached = mergedPage.endReached,
+                        endReached = merged.endReached,
                         loadMoreError = null,
                     )
                 }
-                is ComicSearchResult.Error -> latest.copy(
-                    isLoadingMore = false,
-                    loadMoreError = result.message,
-                )
-                is ComicSearchResult.Direct -> latest.copy(isLoadingMore = false)
+                is ComicSearchResult.Error -> {
+                    val latest = state as? ComicSearchUiState.Content ?: return@launch
+                    state = latest.copy(
+                        isLoadingMore = false,
+                        loadMoreError = result.message,
+                    )
+                }
+                is ComicSearchResult.Direct -> {
+                    val latest = state as? ComicSearchUiState.Content ?: return@launch
+                    state = latest.copy(isLoadingMore = false)
+                }
             }
         }
     }
 
     BackHandler {
         when {
+            showTagFilter -> showTagFilter = false
             deletingHistory -> deletingHistory = false
-            inputMode -> cancelInputMode()
+            inputMode && submittedQuery != null -> cancelInputMode()
             else -> dismissSearch()
         }
     }
-    SearchBar(
-        inputField = {
-            InputField(
-                query = query,
-                onQueryChange = {
-                    query = it
-                },
-                onSearch = ::submitSearch,
-                enabled = inputEnabled,
-                leadingIcon = {
-                    Icon(
-                        imageVector = MiuixIcons.Basic.Search,
-                        contentDescription = "执行搜索",
-                        tint = MiuixTheme.colorScheme.onSurfaceContainerHigh,
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clickable(onClick = { submitSearch(query) })
-                            .padding(start = 16.dp, end = 8.dp),
-                    )
-                },
-                expanded = inputMode,
-                onExpandedChange = { expanded ->
-                    if (expanded) inputMode = true else cancelInputMode()
-                },
-                label = "搜索标题、标签或JM车号",
-                modifier = Modifier.fillMaxWidth(),
-            )
-        },
-        expanded = true,
-        onExpandedChange = { if (!it) dismissSearch() },
-        outsideEndAction = {
-            AnimatedContent(
-                targetState = inputMode,
-                transitionSpec = {
-                    (fadeIn(tween(180)) + slideInHorizontally { it / 3 }) togetherWith
-                        (fadeOut(tween(120)) + slideOutHorizontally { it / 3 })
-                },
-                label = "SearchEndAction",
-            ) { editing ->
-                if (editing) {
-                    // 输入态也保留标签过滤入口：可以先挑标签再敲关键词，甚至只用标签搜索。
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (SEARCH_TAG_FILTER_UI_ENABLED) {
-                            SearchTagFilterButton(
-                                activeCount = tagFilter.activeCount,
-                                onClick = { showTagFilter = true },
-                            )
-                        }
-                        Text(
-                            text = "取消",
-                            color = MiuixTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .clickable(onClick = ::cancelInputMode)
-                                .padding(start = 4.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
-                        )
-                    }
-                } else {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (SEARCH_TAG_FILTER_UI_ENABLED) {
-                            SearchTagFilterButton(
-                                activeCount = tagFilter.activeCount,
-                                onClick = { showTagFilter = true },
-                            )
-                        }
-                        SearchOrderDropdown(
-                            selected = searchOrder,
-                            onSelected = { order ->
-                                if (order != searchOrder) searchOrder = order
-                            },
-                        )
-                    }
-                }
-            }
-        },
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MiuixTheme.colorScheme.surface)
-            .padding(top = statusBarPadding),
-    ) {
-        Box(
+
+    GlassTopBarHost {
+        Scaffold(
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .background(MiuixTheme.colorScheme.surface),
-        ) {
-            AnimatedContent(
-                targetState = inputMode,
-                transitionSpec = {
-                    (fadeIn(tween(190)) + slideInHorizontally { if (targetState) -it / 8 else it / 8 }) togetherWith
-                        (fadeOut(tween(130)) + slideOutHorizontally { if (targetState) it / 8 else -it / 8 })
-                },
-                label = "SearchModeContent",
-            ) { editing ->
-                if (editing) {
-                    SearchHistory(
-                        history = history,
-                        deleting = deletingHistory,
-                        onDeletingChange = { deletingHistory = it },
-                        onSelected = ::submitSearch,
-                        onDelete = { historyQuery ->
-                            history = historyStore.remove(history, historyQuery)
-                            if (history.isEmpty()) deletingHistory = false
+                .fillMaxSize()
+                .nestedScroll(searchScrollBehavior.nestedScrollConnection),
+            containerColor = Color.Transparent,
+            topBar = {
+                BlurredBar(
+                    backdrop = searchBackdrop,
+                    style = topBarBlurStyle,
+                ) {
+                    TopAppBar(
+                        title = "搜索",
+                        subtitle = if (state is ComicSearchUiState.Content) "排序：${searchOrder.label}" else "",
+                        color = if (searchBackdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface,
+                        scrollBehavior = searchScrollBehavior,
+                        navigationIcon = {
+                            LiquidGlassIconButton(
+                                onClick = ::dismissSearch,
+                                backdrop = searchBackdrop,
+                                glassAlpha = currentTopBarGlassAlpha(),
+                                size = 44.dp,
+                            ) {
+                                Icon(
+                                    imageVector = MiuixIcons.ChevronBackward,
+                                    contentDescription = "返回",
+                                    tint = MiuixTheme.colorScheme.onSurface,
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .offset(x = (-1).dp),
+                                )
+                            }
+                        },
+                        actions = {
+                            SearchActionsCapsule(
+                                showFilter = SEARCH_TAG_FILTER_UI_ENABLED,
+                                activeFilterCount = tagFilter.activeCount,
+                                showSort = state is ComicSearchUiState.Content,
+                                selectedOrder = searchOrder,
+                                backdrop = searchBackdrop,
+                                onOpenFilter = { showTagFilter = true },
+                                onSelectOrder = { order ->
+                                    if (order != searchOrder) searchOrder = order
+                                },
+                            )
+                        },
+                        bottomContent = {
+                            SearchInputRow(
+                                query = query,
+                                onQueryChange = {
+                                    query = it
+                                    inputMode = true
+                                },
+                                onSearch = { submitSearch(query) },
+                                onClear = {
+                                    query = ""
+                                    inputMode = true
+                                },
+                                onCancel = ::cancelInputMode,
+                                showCancel = inputMode && submittedQuery != null,
+                            )
                         },
                     )
-                } else {
-                    when (val current = state) {
-                        ComicSearchUiState.Idle -> SearchMessage("输入关键词后执行搜索")
-                        ComicSearchUiState.Loading -> SearchLoading()
-                        is ComicSearchUiState.Empty -> SearchMessage("未找到“${current.query}”相关漫画")
-                        is ComicSearchUiState.Error -> SearchError(
-                            message = current.message,
-                            onRetry = { searchRequestId++ },
+                }
+            },
+        ) { pagePadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (searchBackdrop != null) Modifier.layerBackdrop(searchBackdrop) else Modifier)
+                    .background(MiuixTheme.colorScheme.surface),
+            ) {
+                val contentInnerPadding = PaddingValues(
+                    top = pagePadding.calculateTopPadding(),
+                    bottom = outerPadding.calculateBottomPadding(),
+                )
+                AnimatedContent(
+                    targetState = inputMode,
+                    transitionSpec = {
+                        (fadeIn(tween(180)) + slideInHorizontally { if (targetState) -it / 10 else it / 10 }) togetherWith
+                            (fadeOut(tween(140)) + slideOutHorizontally { if (targetState) it / 10 else -it / 10 })
+                    },
+                    label = "SearchContentMode",
+                ) { editing ->
+                    if (editing) {
+                        SearchDiscovery(
+                            innerPadding = contentInnerPadding,
+                            history = history,
+                            deletingHistory = deletingHistory,
+                            onDeletingHistoryChange = { deletingHistory = it },
+                            onSelectTag = ::submitSearch,
+                            onDeleteHistoryItem = { historyQuery ->
+                                history = historyStore.remove(history, historyQuery)
+                                if (history.isEmpty()) deletingHistory = false
+                            },
+                            onClearAllHistory = {
+                                history = historyStore.clear()
+                                deletingHistory = false
+                            },
+                            onOpenTagFilter = { showTagFilter = true },
+                            tagFilter = tagFilter,
                         )
-                        is ComicSearchUiState.Content -> key(
-                            current.query,
-                            current.order,
-                            current.tagFilter,
-                        ) {
-                            SearchResultGrid(
-                                content = current,
-                                liftedAlbumId = liftedAlbumId,
-                                onLoadMore = ::loadMore,
-                                onAlbumSelected = { album, bounds -> openAlbum(album, bounds) },
+                    } else {
+                        when (val current = state) {
+                            ComicSearchUiState.Idle -> SearchMessage("输入关键词后执行搜索", contentInnerPadding)
+                            ComicSearchUiState.Loading -> SearchLoading(contentInnerPadding)
+                            is ComicSearchUiState.Empty -> SearchMessage("未找到“${current.query}”相关漫画", contentInnerPadding)
+                            is ComicSearchUiState.Error -> SearchError(
+                                message = current.message,
+                                onRetry = { searchRequestId++ },
+                                innerPadding = contentInnerPadding,
                             )
+                            is ComicSearchUiState.Content -> key(
+                                current.query,
+                                current.order,
+                                current.tagFilter,
+                            ) {
+                                SearchResultGrid(
+                                    content = current,
+                                    innerPadding = contentInnerPadding,
+                                    liftedAlbumId = liftedAlbumId,
+                                    onLoadMore = ::loadMore,
+                                    onAlbumSelected = { album, bounds -> openAlbum(album, bounds) },
+                                    favoriteAlbumIds = favoriteAlbumIds,
+                                    bookshelfAlbumIds = bookshelfAlbumIds,
+                                )
+                            }
                         }
                     }
                 }
@@ -518,7 +457,6 @@ internal fun ComicSearchScreen(
             onApply = { selected ->
                 tagFilter = selected
                 showTagFilter = false
-                // 应用过滤后重新发起首页搜索：既有关键词、或仅标签过滤，都需要刷新。
                 if (submittedQuery != null || selected.enabled) searchRequestId++
             },
             onDismiss = { showTagFilter = false },
@@ -526,50 +464,119 @@ internal fun ComicSearchScreen(
     }
 }
 
-private const val SEARCH_TAG_FILTER_UI_ENABLED = true
-
-/**
- * 标签过滤入口。
- *
- * 未启用时用与其他顶栏图标一致的中性色，不再显示蓝色，避免"看起来已经开着"的误导；
- * 启用后图标转为主题色，并叠加一个数字角标显示生效的标签数量，状态一眼可见。
- */
 @Composable
-private fun SearchTagFilterButton(
-    activeCount: Int,
-    onClick: () -> Unit,
+private fun SearchInputRow(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onSearch: (String) -> Unit,
+    onClear: () -> Unit,
+    onCancel: () -> Unit,
+    showCancel: Boolean,
+    modifier: Modifier = Modifier,
 ) {
-    val active = activeCount > 0
-    IconButton(
-        onClick = onClick,
-        minWidth = 42.dp,
-        minHeight = 42.dp,
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        BadgedBox(
-            badge = {
-                if (active) {
-                    Badge(
-                        containerColor = MiuixTheme.colorScheme.primary,
-                        contentColor = MiuixTheme.colorScheme.onPrimary,
+        Surface(
+            shape = RoundedCornerShape(22.dp),
+            color = MiuixTheme.colorScheme.surfaceContainerHigh,
+            modifier = Modifier
+                .weight(1f)
+                .height(42.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = MiuixIcons.Basic.Search,
+                    contentDescription = "搜索",
+                    tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clickable(onClick = { onSearch(query) }),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    singleLine = true,
+                    textStyle = MiuixTheme.textStyles.body1.copy(
+                        color = MiuixTheme.colorScheme.onSurface,
+                    ),
+                    cursorBrush = SolidColor(MiuixTheme.colorScheme.primary),
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Search,
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onSearch = { onSearch(query) },
+                    ),
+                    decorationBox = { innerTextField ->
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            if (query.isEmpty()) {
+                                Text(
+                                    text = "搜索标题、标签或JM车号",
+                                    style = MiuixTheme.textStyles.body2,
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                )
+                            }
+                            innerTextField()
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+                if (query.isNotEmpty()) {
+                    IconButton(
+                        onClick = onClear,
+                        minWidth = 28.dp,
+                        minHeight = 28.dp,
+                        modifier = Modifier.size(28.dp),
                     ) {
-                        Text(text = activeCount.toString())
+                        Surface(
+                            shape = CircleShape,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantActions.copy(alpha = 0.2f),
+                            modifier = Modifier.size(18.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = MiuixIcons.Close,
+                                    contentDescription = "清除",
+                                    tint = MiuixTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(12.dp),
+                                )
+                            }
+                        }
                     }
                 }
-            },
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showCancel,
+            enter = fadeIn() + expandHorizontally(),
+            exit = fadeOut() + shrinkHorizontally(),
         ) {
-            Icon(
-                imageVector = MiuixIcons.Filter,
-                contentDescription = if (active) "标签过滤已启用，$activeCount 个标签" else "标签过滤",
-                modifier = Modifier.size(20.dp),
-                tint = if (active) {
-                    MiuixTheme.colorScheme.primary
-                } else {
-                    MiuixTheme.colorScheme.onSurfaceVariantActions
-                },
+            Text(
+                text = "取消",
+                style = MiuixTheme.textStyles.body1,
+                color = MiuixTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clickable(onClick = onCancel)
+                    .padding(start = 12.dp, top = 6.dp, bottom = 6.dp),
             )
         }
     }
 }
+
+private const val SEARCH_TAG_FILTER_UI_ENABLED = true
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -582,7 +589,6 @@ private fun SearchTagFilterDialog(
     onApply: (SearchTagFilter) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // 本地工作副本：点按标签在 无 → 包含(+) → 排除(-) → 无 之间循环，应用时一次性回传。
     var working by remember(filter) { mutableStateOf(filter) }
     var input by remember { mutableStateOf("") }
     val userTagSet = remember(userTags) { userTags.mapNotNull(::normalizeSearchTag).toSet() }
@@ -610,7 +616,6 @@ private fun SearchTagFilterDialog(
     fun addInputTag() {
         val tag = normalizeSearchTag(input) ?: return
         onAddUserTag(tag)
-        // 新增即视为“包含”，若已存在则保持既有状态。
         if (working.stateOf(tag) != SearchTagState.INCLUDE) {
             working = working.toggleInclude(tag)
         }
@@ -633,7 +638,6 @@ private fun SearchTagFilterDialog(
         },
         onDismissRequest = onDismiss,
     ) {
-        // 已选条件常驻显示：状态不藏在点击循环里，点一下即可直接移除该条件。
         if (working.enabled) {
             Text(
                 text = "已选条件（点按移除）",
@@ -783,60 +787,187 @@ private fun SearchTagChip(
     }
 }
 
-@Composable
-private fun SearchOrderDropdown(
-    selected: ComicSearchOrder,
-    onSelected: (ComicSearchOrder) -> Unit,
+internal enum class ComicSearchOrder(
+    val apiValue: String,
+    val label: String,
 ) {
-    val entry = DropdownEntry(
-        items = ComicSearchOrder.entries.map { order ->
-            DropdownItem(
-                text = order.label,
-                selected = order == selected,
-                onClick = { onSelected(order) },
-            )
-        },
-    )
-    Row(
-        modifier = Modifier.padding(end = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Text(
-            text = selected.label,
-            color = MiuixTheme.colorScheme.primary,
-            style = MiuixTheme.textStyles.footnote1,
-        )
-        WindowIconDropdownMenu(
-            entry = entry,
-            minWidth = 42.dp,
-            minHeight = 42.dp,
-        ) {
-            Icon(
-                imageVector = MiuixIcons.Sort,
-                contentDescription = "结果排序：${selected.label}",
-                modifier = Modifier.size(20.dp),
-                tint = MiuixTheme.colorScheme.primary,
-            )
-        }
-    }
+    LATEST(JmxMagicConstants.ORDER_BY_LATEST, "最新"),
+    MOST_VIEWED(JmxMagicConstants.ORDER_BY_VIEW, "最多点击"),
+    MOST_PICTURES(JmxMagicConstants.ORDER_BY_PICTURE, "最多图片"),
+    MOST_LIKED(JmxMagicConstants.ORDER_BY_LIKE, "最多爱心"),
 }
 
-private fun applySearchSystemBarAppearance(window: Window, color: Int, lightStatusBars: Boolean) {
-    window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
-    @Suppress("DEPRECATION")
-    window.statusBarColor = color
-    WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = lightStatusBars
+@Composable
+private fun SearchActionsCapsule(
+    showFilter: Boolean,
+    activeFilterCount: Int,
+    showSort: Boolean,
+    selectedOrder: ComicSearchOrder,
+    backdrop: LayerBackdrop?,
+    onOpenFilter: () -> Unit,
+    onSelectOrder: (ComicSearchOrder) -> Unit,
+) {
+    if (!showFilter && !showSort) return
+
+    val haptic = LocalHapticFeedback.current
+    val isDark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
+    var sortMenuExpanded by remember { mutableStateOf(false) }
+
+    val filterInteraction = remember { MutableInteractionSource() }
+    val filterPressed by filterInteraction.collectIsPressedAsState()
+    val filterScale = remember { Animatable(1f) }
+
+    LaunchedEffect(filterPressed) {
+        filterScale.animateTo(
+            targetValue = if (filterPressed) 0.88f else 1f,
+            animationSpec = spring(stiffness = 600f, dampingRatio = 0.65f),
+        )
+    }
+
+    val sortInteraction = remember { MutableInteractionSource() }
+    val sortPressed by sortInteraction.collectIsPressedAsState()
+    val sortScale = remember { Animatable(1f) }
+
+    LaunchedEffect(sortPressed) {
+        sortScale.animateTo(
+            targetValue = if (sortPressed) 0.88f else 1f,
+            animationSpec = spring(stiffness = 600f, dampingRatio = 0.65f),
+        )
+    }
+
+    val sortEntry = remember(selectedOrder) {
+        DropdownEntry(
+            items = ComicSearchOrder.entries.map { order ->
+                DropdownItem(
+                    text = order.label,
+                    selected = order == selectedOrder,
+                    onClick = {
+                        onSelectOrder(order)
+                        sortMenuExpanded = false
+                    },
+                )
+            },
+        )
+    }
+
+    LiquidGlassCapsule(
+        backdrop = backdrop,
+        glassAlpha = currentTopBarGlassAlpha(),
+        modifier = Modifier.animateContentSize(),
+    ) {
+        if (showFilter) {
+            val filterActive = activeFilterCount > 0
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .clickable(
+                        interactionSource = filterInteraction,
+                        indication = null,
+                        role = Role.Button,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                            onOpenFilter()
+                        },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                BadgedBox(
+                    badge = {
+                        if (filterActive) {
+                            Badge(
+                                containerColor = MiuixTheme.colorScheme.primary,
+                                contentColor = MiuixTheme.colorScheme.onPrimary,
+                            ) {
+                                Text(text = activeFilterCount.toString())
+                            }
+                        }
+                    },
+                    modifier = Modifier.graphicsLayer {
+                        scaleX = filterScale.value
+                        scaleY = filterScale.value
+                    },
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Filter,
+                        contentDescription = if (filterActive) "标签过滤已启用，$activeFilterCount 个标签" else "标签过滤",
+                        modifier = Modifier.size(20.dp),
+                        tint = if (filterActive) {
+                            MiuixTheme.colorScheme.primary
+                        } else {
+                            MiuixTheme.colorScheme.onSurface
+                        },
+                    )
+                }
+            }
+        }
+
+        if (showFilter && showSort) {
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(16.dp)
+                    .background(
+                        if (isDark) Color.White.copy(alpha = 0.18f) else Color.Black.copy(alpha = 0.12f),
+                    ),
+            )
+        }
+
+        if (showSort) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .clickable(
+                        interactionSource = sortInteraction,
+                        indication = null,
+                        role = Role.Button,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                            sortMenuExpanded = true
+                        },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = MiuixIcons.Sort,
+                    contentDescription = "结果排序：${selectedOrder.label}",
+                    modifier = Modifier
+                        .size(20.dp)
+                        .graphicsLayer {
+                            scaleX = sortScale.value
+                            scaleY = sortScale.value
+                        },
+                    tint = MiuixTheme.colorScheme.onSurface,
+                )
+            }
+        }
+    }
+
+    if (showSort) {
+        WindowDropdownPopup(
+            entries = listOf(sortEntry),
+            show = sortMenuExpanded,
+            onDismiss = { sortMenuExpanded = false },
+            onDismissFinished = {},
+            maxHeight = null,
+            dropdownColors = DropdownDefaults.dropdownColors(),
+        )
+    }
 }
 
 @Composable
 private fun SearchResultGrid(
     content: ComicSearchUiState.Content,
+    innerPadding: PaddingValues,
     liftedAlbumId: String?,
     onLoadMore: () -> Unit,
     onAlbumSelected: (HomeAlbum, Rect) -> Unit,
+    favoriteAlbumIds: Set<String>,
+    bookshelfAlbumIds: Set<String>,
 ) {
     val gridState = rememberLazyGridState()
+    BindTopBarGlassScroll(gridState)
     val footerKey = "search-footer"
     val footerVisible by remember(gridState) {
         derivedStateOf {
@@ -854,15 +985,22 @@ private fun SearchResultGrid(
         columns = GridCells.Fixed(3),
         state = gridState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 28.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        contentPadding = PaddingValues(
+            start = 10.dp,
+            top = innerPadding.calculateTopPadding() + 8.dp,
+            end = 10.dp,
+            bottom = innerPadding.calculateBottomPadding() + 28.dp,
+        ),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         items(items = content.albums, key = { it.id }) { album ->
             AlbumItem(
                 album = album,
                 coverLifted = album.id == liftedAlbumId,
                 onSelected = onAlbumSelected,
+                isFavorite = album.id in favoriteAlbumIds,
+                inBookshelf = album.id in bookshelfAlbumIds,
             )
         }
         item(key = "search-footer", span = { GridItemSpan(maxLineSpan) }) {
@@ -904,111 +1042,349 @@ private fun SearchResultGrid(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SearchHistory(
+private fun SearchDiscovery(
+    innerPadding: PaddingValues,
     history: List<String>,
-    deleting: Boolean,
-    onDeletingChange: (Boolean) -> Unit,
-    onSelected: (String) -> Unit,
-    onDelete: (String) -> Unit,
+    deletingHistory: Boolean,
+    onDeletingHistoryChange: (Boolean) -> Unit,
+    onSelectTag: (String) -> Unit,
+    onDeleteHistoryItem: (String) -> Unit,
+    onClearAllHistory: () -> Unit,
+    onOpenTagFilter: () -> Unit,
+    tagFilter: SearchTagFilter,
+    modifier: Modifier = Modifier,
 ) {
-    if (history.isEmpty()) return
+    val pillShape = CircleShape
+    val haptic = LocalHapticFeedback.current
+
+    val discoveryScroll = rememberScrollState()
+    BindTopBarGlassScroll(discoveryScroll)
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
-            .padding(top = 8.dp)
-            .verticalScroll(rememberScrollState()),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-                .padding(start = 20.dp, end = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "搜索历史",
-                style = MiuixTheme.textStyles.title3,
+            .padding(
+                top = innerPadding.calculateTopPadding() + 10.dp,
+                bottom = innerPadding.calculateBottomPadding() + 16.dp,
             )
-            Spacer(modifier = Modifier.weight(1f))
-            IconButton(onClick = { onDeletingChange(!deleting) }) {
-                Icon(
-                    imageVector = if (deleting) MiuixIcons.Basic.Check else MiuixIcons.Delete,
-                    contentDescription = if (deleting) "完成删除" else "删除搜索历史",
-                    tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                )
-            }
-        }
-        history.forEach { item ->
-            BasicComponent(
-                title = item,
+            .verticalScroll(discoveryScroll),
+    ) {
+        if (history.isNotEmpty()) {
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .combinedClickable(
-                        onClick = { if (!deleting) onSelected(item) },
-                        onLongClick = { onDeletingChange(true) },
-                    ),
-                endActions = {
-                    AnimatedVisibility(
-                        visible = deleting,
-                        enter = fadeIn(),
-                        exit = fadeOut(),
+                    .padding(start = 20.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Recent,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                    )
+                    Text(
+                        text = "搜索历史",
+                        style = MiuixTheme.textStyles.title4,
+                        color = MiuixTheme.colorScheme.onSurface,
+                    )
+                }
+                if (!deletingHistory) {
+                    IconButton(
+                        onClick = { onDeletingHistoryChange(true) },
+                        minWidth = 36.dp,
+                        minHeight = 36.dp,
                     ) {
-                        IconButton(onClick = { onDelete(item) }) {
-                            Icon(
-                                imageVector = MiuixIcons.Delete,
-                                contentDescription = "删除 $item",
-                                tint = MiuixTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp),
+                        Icon(
+                            imageVector = MiuixIcons.Delete,
+                            contentDescription = "管理搜索历史",
+                            modifier = Modifier.size(18.dp),
+                            tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                        )
+                    }
+                } else {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Surface(
+                            onClick = onClearAllHistory,
+                            shape = CircleShape,
+                            color = MiuixTheme.colorScheme.errorContainer.copy(alpha = 0.22f),
+                        ) {
+                            Text(
+                                text = "清空全部",
+                                style = MiuixTheme.textStyles.footnote1,
+                                color = MiuixTheme.colorScheme.error,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            )
+                        }
+                        Surface(
+                            onClick = { onDeletingHistoryChange(false) },
+                            shape = CircleShape,
+                            color = MiuixTheme.colorScheme.primaryContainer,
+                        ) {
+                            Text(
+                                text = "完成",
+                                style = MiuixTheme.textStyles.footnote1.copy(fontWeight = FontWeight.SemiBold),
+                                color = MiuixTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
                             )
                         }
                     }
-                },
+                }
+            }
+
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                history.forEach { item ->
+                    val itemBorder = if (deletingHistory) {
+                        BorderStroke(0.8.dp, MiuixTheme.colorScheme.error.copy(alpha = 0.35f))
+                    } else {
+                        BorderStroke(0.8.dp, MiuixTheme.colorScheme.outline.copy(alpha = 0.12f))
+                    }
+                    Surface(
+                        shape = pillShape,
+                        color = if (deletingHistory) {
+                            MiuixTheme.colorScheme.errorContainer.copy(alpha = 0.22f)
+                        } else {
+                            MiuixTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f)
+                        },
+                        border = itemBorder,
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .clip(pillShape)
+                                .combinedClickable(
+                                    onClick = {
+                                        if (deletingHistory) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                                            onDeleteHistoryItem(item)
+                                        } else {
+                                            onSelectTag(item)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        if (!deletingHistory) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            onDeletingHistoryChange(true)
+                                        }
+                                    },
+                                )
+                                .padding(
+                                    start = 14.dp,
+                                    end = if (deletingHistory) 10.dp else 14.dp,
+                                    top = 7.dp,
+                                    bottom = 7.dp,
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                text = item,
+                                style = MiuixTheme.textStyles.body2,
+                                color = if (deletingHistory) {
+                                    MiuixTheme.colorScheme.error
+                                } else {
+                                    MiuixTheme.colorScheme.onSurface
+                                },
+                            )
+                            if (deletingHistory) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clip(CircleShape)
+                                        .background(MiuixTheme.colorScheme.error.copy(alpha = 0.16f)),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = MiuixIcons.Close,
+                                        contentDescription = "删除",
+                                        tint = MiuixTheme.colorScheme.error,
+                                        modifier = Modifier.size(11.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 16.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    imageVector = MiuixIcons.Tune,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                )
+                Text(
+                    text = "常用标签",
+                    style = MiuixTheme.textStyles.title4,
+                    color = MiuixTheme.colorScheme.onSurface,
+                )
+            }
+            Text(
+                text = "点击快速搜索",
+                style = MiuixTheme.textStyles.footnote1,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+
+        FlowRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DEFAULT_SEARCH_TAGS.forEach { tag ->
+                Surface(
+                    shape = pillShape,
+                    color = MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.75f),
+                    border = BorderStroke(0.8.dp, MiuixTheme.colorScheme.outline.copy(alpha = 0.10f)),
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onSelectTag(tag)
+                    },
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = "#",
+                            style = MiuixTheme.textStyles.footnote1.copy(fontWeight = FontWeight.Bold),
+                            color = MiuixTheme.colorScheme.primary.copy(alpha = 0.75f),
+                        )
+                        Text(
+                            text = tag,
+                            style = MiuixTheme.textStyles.body2,
+                            color = MiuixTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchMessage(
+    message: String,
+    innerPadding: PaddingValues = PaddingValues(),
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding)
+            .padding(horizontal = 32.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MiuixTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.size(64.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = MiuixIcons.Basic.Search,
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp),
+                        tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                    )
+                }
+            }
+            Text(
+                text = message,
+                style = MiuixTheme.textStyles.body1,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                textAlign = TextAlign.Center,
             )
         }
     }
 }
 
 @Composable
-private fun SearchLoading() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator()
-    }
-}
-
-@Composable
-private fun SearchMessage(message: String) {
+private fun SearchLoading(
+    innerPadding: PaddingValues = PaddingValues(),
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 28.dp),
+            .padding(innerPadding),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = message,
-            style = MiuixTheme.textStyles.body2,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            textAlign = TextAlign.Center,
-        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            CircularProgressIndicator(size = 32.dp, strokeWidth = 3.dp)
+            Text(
+                text = "正在搜索漫画...",
+                style = MiuixTheme.textStyles.footnote1,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
     }
 }
 
 @Composable
-private fun SearchError(message: String, onRetry: () -> Unit) {
-    Column(
+private fun SearchError(
+    message: String,
+    onRetry: () -> Unit,
+    innerPadding: PaddingValues = PaddingValues(),
+) {
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+            .padding(innerPadding)
+            .padding(horizontal = 32.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = message,
-            style = MiuixTheme.textStyles.body2,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            textAlign = TextAlign.Center,
-        )
-        TextButton(text = "重试", onClick = onRetry)
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                text = message,
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                textAlign = TextAlign.Center,
+            )
+            TextButton(
+                text = "重试",
+                onClick = onRetry,
+                colors = ButtonDefaults.textButtonColorsPrimary(),
+            )
+        }
     }
 }
 
@@ -1016,11 +1392,6 @@ internal class ComicSearchRepository(
     private val homeRepository: HomeRepository,
 ) {
 
-    /**
-     * 单次服务端搜索。标签的包含/排除通过 [SearchQueryComposer] 拼进 search_query，由服务端
-     * 一次性完成过滤，客户端不再逐条拉取详情。服务端自身完成简繁归一化，因此无需简繁变体扩散，
-     * 每页只发一个请求。
-     */
     suspend fun search(
         query: String,
         page: Int,
@@ -1028,7 +1399,6 @@ internal class ComicSearchRepository(
         tagFilter: SearchTagFilter = SearchTagFilter(),
     ): ComicSearchResult {
         val normalizedQuery = query.trim()
-        // 纯车号直达详情（无过滤语义）。
         val directId = normalizedQuery.toJmSearchIdOrNull()
         if (directId != null && !tagFilter.enabled) return loadDirectAlbum(directId)
 
@@ -1049,7 +1419,6 @@ internal class ComicSearchRepository(
                 )) {
                     is JmxResult.Success -> {
                         val searchPage = result.value
-                        // 车号直达（服务端重定向）：无过滤时命中，直接进入详情。
                         val redirectId = searchPage.redirectAlbumId?.takeIf { it.isNotBlank() }
                         if (redirectId != null && !tagFilter.enabled && searchPage.content.size == 1) {
                             ComicSearchResult.Direct(
@@ -1069,32 +1438,24 @@ internal class ComicSearchRepository(
                     }
                     is JmxResult.Failure -> ComicSearchResult.Error(result.error.toUiMessage())
                 }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                ComicSearchResult.Error(error.message ?: "搜索出现未知异常。")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                ComicSearchResult.Error(failure.message ?: "搜索失败，请重试")
             }
         }
     }
 
     private suspend fun loadDirectAlbum(albumId: String): ComicSearchResult {
-        return when (val result = homeRepository.core.albumApi.detailFull(albumId)) {
-            is JmxResult.Success -> ComicSearchResult.Direct(
-                result.value.toHomeAlbum(homeRepository.currentImageHost),
-            )
-            is JmxResult.Failure -> ComicSearchResult.Error(result.error.toUiMessage())
+        return withContext(Dispatchers.IO) {
+            when (val result = homeRepository.core.albumApi.detailFull(albumId)) {
+                is JmxResult.Success -> ComicSearchResult.Direct(
+                    result.value.toHomeAlbum(homeRepository.currentImageHost),
+                )
+                is JmxResult.Failure -> ComicSearchResult.Error(result.error.toUiMessage())
+            }
         }
     }
-}
-
-internal enum class ComicSearchOrder(
-    val apiValue: String,
-    val label: String,
-) {
-    LATEST(JmxMagicConstants.ORDER_BY_LATEST, "最新"),
-    MOST_VIEWED(JmxMagicConstants.ORDER_BY_VIEW, "最多点击"),
-    MOST_PICTURES(JmxMagicConstants.ORDER_BY_PICTURE, "最多图片"),
-    MOST_LIKED(JmxMagicConstants.ORDER_BY_LIKE, "最多爱心"),
 }
 
 internal sealed interface ComicSearchResult {
@@ -1144,7 +1505,6 @@ private sealed interface ComicSearchUiState {
     ) : ComicSearchUiState
 }
 
-/** 仅标签过滤（无关键词）时用于展示/历史/空态的摘要文案。 */
 internal fun tagFilterSummary(filter: SearchTagFilter): String {
     val parts = buildList {
         filter.normalizedIncludeTags.forEach { add("+$it") }
@@ -1167,10 +1527,6 @@ internal fun AlbumDetail.toHomeAlbum(imageHost: String): HomeAlbum {
     )
 }
 
-/**
- * 生成简/繁体查询变体。搜索结果页已改为依赖服务端自带的简繁归一化，不再需要变体扩散；
- * 但书架的「按作者搜索全部作品」仍复用这两个工具函数，故保留于此。
- */
 internal fun searchQueryVariants(
     query: String,
     toTraditional: (String) -> String,
@@ -1184,6 +1540,3 @@ internal fun searchQueryVariants(
 
 internal fun toTraditionalChinese(text: String): String =
     runCatching { ZhConverterUtil.toTraditional(text) }.getOrDefault(text)
-
-private val JM_SEARCH_ID_REGEX = Regex("(?i)^(?:JM)?\\s*(\\d+)$")
-private const val INITIAL_SEARCH_FOCUS_GUARD_MILLIS = 180L

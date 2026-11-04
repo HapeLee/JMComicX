@@ -3,21 +3,22 @@ package dev.jmx.client
 import android.Manifest
 import android.content.pm.PackageManager
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
-import android.view.WindowManager
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
@@ -25,57 +26,65 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.core.graphics.drawable.toDrawable
-import androidx.core.view.WindowCompat
 import dev.jmx.client.core.result.JmxResult
 import dev.jmx.client.core.result.toUserMessage
 import dev.jmx.client.effect.BlurredBar
+import dev.jmx.client.effect.BlurredFloatingNavigationBar
 import dev.jmx.client.effect.FloatingNavBarStyle
 import dev.jmx.client.effect.TopBarBlurStyle
+import dev.jmx.client.effect.liquid.FloatingCategoryMenu
+import dev.jmx.client.effect.liquid.FloatingCategoryMenuState
+import dev.jmx.client.effect.liquid.GlassTopBarHost
+import dev.jmx.client.effect.liquid.MatterLiquidGlassNavigationBar
+import dev.jmx.client.effect.liquid.rememberMatterBarMotion
 import dev.jmx.client.effect.rememberBarBackdrop
-import dev.jmx.client.effect.BlurredFloatingNavigationBar
-import dev.jmx.client.effect.liquid.IosLiquidGlassNavigationBar
+import dev.jmx.client.effect.rememberPagerFlingPassThroughConnection
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationItem
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.utils.springAnimateToPage
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.basic.Search
+import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Contacts
+import top.yukonga.miuix.kmp.icon.extended.Home
+import top.yukonga.miuix.kmp.icon.extended.Notes
+import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.nav.core.navBackStackOf
 import top.yukonga.miuix.kmp.nav.transition.NavTransitions
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Contacts
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Home
-import top.yukonga.miuix.kmp.icon.extended.Settings
-import top.yukonga.miuix.kmp.icon.extended.Notes
-import top.yukonga.miuix.kmp.icon.basic.Search
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import dev.jmx.client.effect.liquid.GlassTopBarIcon as Icon
+import dev.jmx.client.effect.liquid.GlassTopBarIconButton as IconButton
 
 @Composable
 internal fun JmxApp(
@@ -209,6 +218,9 @@ internal fun JmxApp(
     }
     var accountProfile by remember(accountRepository) { mutableStateOf(accountRepository.restore()) }
     var accountSessionRevision by rememberSaveable { mutableIntStateOf(0) }
+    val coverMembershipIdentity = accountProfile?.let { "${it.id}:${it.username}" }
+    val favoriteMembership = remember(coverMembershipIdentity) { FavoriteAlbumMembership() }
+    val coverFavoriteAlbumIds = key(favoriteMembership) { favoriteMembership.ids.collectAsState().value }
     val favoriteSelection = remember(accountSessionRevision, accountProfile?.id) { FavoriteCollectionSelection() }
     var showLogin by rememberSaveable { mutableStateOf(false) }
     var loginSubmitting by remember { mutableStateOf(false) }
@@ -229,27 +241,12 @@ internal fun JmxApp(
     var detailRequest by remember { mutableStateOf<AlbumDetailTransitionRequest?>(null) }
     var readerRequest by remember { mutableStateOf<ReaderLaunchRequest?>(null) }
     var bookshelfRevision by remember { mutableIntStateOf(0) }
+    val coverBookshelfAlbumIds by bookshelfRepository.albumIds.collectAsState()
     // 从分组序列页点了某个分组：书架重建后由它把分页落到那一格，消费完立刻清空。
     var pendingBookshelfGroupId by remember { mutableStateOf<String?>(null) }
     var searchExpanded by rememberSaveable { mutableStateOf(false) }
     var pendingSearchQuery by rememberSaveable { mutableStateOf<String?>(null) }
-    val searchTransitionProgress by animateFloatAsState(
-        targetValue = if (searchExpanded) 1f else 0f,
-        label = "HomeSearchTopBarProgress",
-    )
     val activeTab = mainPagerState.selectedPage.coerceIn(0, tabs.lastIndex)
-    val searchSurfaceColor = MiuixTheme.colorScheme.surface
-
-    fun prepareSearchSystemBar() {
-        val window = context.findActivity()?.window ?: return
-        val color = searchSurfaceColor.toArgb()
-        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
-        window.setBackgroundDrawable(color.toDrawable())
-        @Suppress("DEPRECATION")
-        window.statusBarColor = color
-        WindowCompat.getInsetsController(window, window.decorView)
-            .isAppearanceLightStatusBars = searchSurfaceColor.luminance() > 0.5f
-    }
 
     fun requestLogin() {
         loginFailure = null
@@ -365,6 +362,13 @@ internal fun JmxApp(
         )
     }
 
+    LaunchedEffect(favoriteMembership, accountSessionRestored, accountSessionRevision, foregroundRevision) {
+        if (coverMembershipIdentity == null || !accountSessionRestored) return@LaunchedEffect
+        favoriteMembership.refresh { page ->
+            accountDataRepository.loadCollection(AccountCollectionKind.FAVORITES, page)
+        }
+    }
+
     LaunchedEffect(homeRepository, homeRequestId) {
         val previousState = homeState
         val wasRefreshing = isHomeRefreshing
@@ -423,20 +427,383 @@ internal fun JmxApp(
             onBack = ::navigateAccountBack,
             transition = NavTransitions.MiuixDefault,
         ) {
-                entry<JmxRoute> { route ->
+            entry<JmxRoute> { route ->
+                GlassTopBarHost {
                     Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
-                    when (route) {
-                        JmxRoute.MAIN -> {
-                            val navigationBackdrop = rememberBarBackdrop()
-                            Scaffold(
-                            modifier = Modifier.fillMaxSize(),
-                            containerColor = Color.Transparent,
-                            bottomBar = {
-                                if (liquidGlassNavBar) {
-                                    if (floatingNavBarStyle == FloatingNavBarStyle.IOS_LIKE) {
-                                        IosLiquidGlassNavigationBar(
+                        when (route) {
+                            JmxRoute.MAIN -> {
+                                val navigationBackdrop = rememberBarBackdrop()
+                                val categoryMenuBesideNavigation = liquidGlassNavBar && floatingNavBarStyle == FloatingNavBarStyle.IOS_LIKE
+                                val bookshelfCategoryMenu = remember { FloatingCategoryMenuState() }
+                                val homeCategories = (homeState as? HomeUiState.Content)?.categories.orEmpty()
+                                // Matter 按 Pager 实际越过中点的页面触发，不按点击后立即更新的目标页触发。
+                                val categoryTab = mainPagerState.pagerState.currentPage
+                                val categoryButtonVisible = detailRequest == null && readerRequest == null && when (categoryTab) {
+                                    0 -> !searchExpanded && homeCategories.isNotEmpty()
+                                    1 -> bookshelfCategoryMenu.available
+                                    else -> false
+                                }
+                                val categoryMotion = rememberMatterBarMotion(categoryButtonVisible, liquidNavigationItems.size)
+                                var navigationHeightPx by remember { mutableIntStateOf(0) }
+                                val categoryMenuBottomPadding = if (categoryMenuBesideNavigation) null else {
+                                    with(LocalDensity.current) { navigationHeightPx.toDp() } + 12.dp
+                                }
+                                Scaffold(
+                                    modifier = Modifier.fillMaxSize(),
+                                    containerColor = Color.Transparent,
+                                    bottomBar = {
+                                        Box(Modifier.onSizeChanged { navigationHeightPx = it.height }) {
+                                            if (liquidGlassNavBar) {
+                                                if (floatingNavBarStyle == FloatingNavBarStyle.IOS_LIKE) {
+                                                    // 保留内容避让；玻璃本体放到全屏悬浮层，才能与按钮正确交错遮挡。
+                                                    Box(Modifier.fillMaxWidth().height(56.dp + categoryMotion.bottomPadding))
+                                                } else {
+                                                    BlurredFloatingNavigationBar(backdrop = navigationBackdrop) {
+                                                        tabs.forEachIndexed { index, tab ->
+                                                            FloatingNavigationBarItem(
+                                                                selected = mainPagerState.selectedPage == index,
+                                                                onClick = {
+                                                                    searchExpanded = false
+                                                                    mainPagerState.animateToPage(index)
+                                                                },
+                                                                icon = tab.icon,
+                                                                label = tab.label,
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                BlurredBar(
+                                                    backdrop = navigationBackdrop,
+                                                    style = TopBarBlurStyle.GAUSSIAN,
+                                                    modifier = Modifier.background(
+                                                        if (navigationBackdrop != null) {
+                                                            Color.Transparent
+                                                        } else {
+                                                            MiuixTheme.colorScheme.surface
+                                                        },
+                                                    ),
+                                                ) {
+                                                    NavigationBar(
+                                                        color = if (navigationBackdrop != null) {
+                                                            Color.Transparent
+                                                        } else {
+                                                            MiuixTheme.colorScheme.surface
+                                                        },
+                                                    ) {
+                                                        tabs.forEachIndexed { index, tab ->
+                                                            NavigationBarItem(
+                                                                selected = mainPagerState.selectedPage == index,
+                                                                onClick = {
+                                                                    searchExpanded = false
+                                                                    mainPagerState.animateToPage(index)
+                                                                },
+                                                                icon = tab.icon,
+                                                                label = tab.label,
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                ) { outerPadding ->
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .then(
+                                                if (navigationBackdrop != null) {
+                                                    Modifier.layerBackdrop(navigationBackdrop)
+                                                } else {
+                                                    Modifier
+                                                },
+                                            ),
+                                    ) {
+                                        // 对齐 Legado MainScreen：同向嵌套只在外层主 Pager 安装速度返还适配。
+                                        val mainPagerNestedScrollConnection = rememberPagerFlingPassThroughConnection(mainPagerState.pagerState)
+                                        HorizontalPager(
+                                            state = mainPagerState.pagerState,
+                                            modifier = Modifier.fillMaxSize(),
+                                            pageNestedScrollConnection = mainPagerNestedScrollConnection,
+                                            userScrollEnabled = true,
+                                            beyondViewportPageCount = 1,
+                                        ) { tab ->
+                                            when (tab) {
+                                                0 -> {
+                                                    AnimatedContent(
+                                                        targetState = searchExpanded,
+                                                        transitionSpec = {
+                                                            (fadeIn(tween(180)) + slideInVertically(tween(180)) { -it / 12 }) togetherWith
+                                                                (fadeOut(tween(140)) + slideOutVertically(tween(140)) { it / 12 })
+                                                        },
+                                                        label = "HomeSearchTransition",
+                                                    ) { isSearch ->
+                                                        if (isSearch) {
+                                                            ComicSearchScreen(
+                                                                homeRepository = homeRepository,
+                                                                favoriteAlbumIds = coverFavoriteAlbumIds,
+                                                                bookshelfAlbumIds = coverBookshelfAlbumIds,
+                                                                initialQuery = pendingSearchQuery,
+                                                                outerPadding = outerPadding,
+                                                                topBarBlurStyle = topBarBlurStyle,
+                                                                liftedAlbumId = detailRequest
+                                                                    ?.takeIf {
+                                                                        it.origin == AlbumDetailOrigin.SEARCH && it.sourceBounds != null
+                                                                    }
+                                                                    ?.album
+                                                                    ?.id,
+                                                                onDismiss = {
+                                                                    searchExpanded = false
+                                                                    pendingSearchQuery = null
+                                                                },
+                                                                onAlbumSelected = { album, sourceBounds ->
+                                                                    if (detailRequest == null) {
+                                                                        detailRequest = AlbumDetailTransitionRequest(
+                                                                            album = album,
+                                                                            sourceBounds = sourceBounds,
+                                                                            origin = AlbumDetailOrigin.SEARCH,
+                                                                        )
+                                                                    }
+                                                                },
+                                                            )
+                                                        } else {
+                                                            val pageBackdrop = rememberBarBackdrop()
+                                                            val homeScrollBehavior = MiuixScrollBehavior(
+                                                                canScroll = { detailRequest == null && readerRequest == null },
+                                                            )
+                                                            GlassTopBarHost {
+                                                                Scaffold(
+                                                                    modifier = Modifier
+                                                                        .fillMaxSize()
+                                                                        .nestedScroll(homeScrollBehavior.nestedScrollConnection),
+                                                                    containerColor = Color.Transparent,
+                                                                    topBar = {
+                                                                        BlurredBar(
+                                                                            backdrop = pageBackdrop,
+                                                                            style = topBarBlurStyle,
+                                                                        ) {
+                                                                            TopAppBar(
+                                                                                title = "JMComicX",
+                                                                                color = if (pageBackdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface,
+                                                                                scrollBehavior = homeScrollBehavior,
+                                                                                actions = {
+                                                                                    IconButton(onClick = {
+                                                                                        pendingSearchQuery = null
+                                                                                        searchExpanded = true
+                                                                                    }) {
+                                                                                        Icon(
+                                                                                            imageVector = MiuixIcons.Basic.Search,
+                                                                                            contentDescription = "搜索",
+                                                                                            tint = MiuixTheme.colorScheme.onBackground,
+                                                                                        )
+                                                                                    }
+                                                                                },
+                                                                            )
+                                                                        }
+                                                                    },
+                                                                ) { pagePadding ->
+                                                                    HomeScreen(
+                                                                        favoriteAlbumIds = coverFavoriteAlbumIds,
+                                                                        bookshelfAlbumIds = coverBookshelfAlbumIds,
+                                                                        innerPadding = PaddingValues(
+                                                                            top = pagePadding.calculateTopPadding(),
+                                                                            bottom = outerPadding.calculateBottomPadding(),
+                                                                        ),
+                                                                        backdrop = pageBackdrop,
+                                                                        state = homeState,
+                                                                        isRefreshing = isHomeRefreshing,
+                                                                        pagerState = homePagerState,
+                                                                        pagerEnabled = detailRequest == null && readerRequest == null,
+                                                                        liftedAlbumId = detailRequest
+                                                                            ?.takeIf {
+                                                                                it.origin == AlbumDetailOrigin.HOME && it.sourceBounds != null
+                                                                            }
+                                                                            ?.album
+                                                                            ?.id,
+                                                                        onLoadMore = { categoryId ->
+                                                                            val content = homeState as? HomeUiState.Content
+                                                                            val category = content?.categories?.firstOrNull { it.id == categoryId }
+                                                                            if (
+                                                                                category != null &&
+                                                                                !category.isLoadingMore &&
+                                                                                !category.endReached &&
+                                                                                !isHomeRefreshing &&
+                                                                                pendingLoadMoreCategoryId == null
+                                                                            ) {
+                                                                                homeState = content.copy(
+                                                                                    categories = content.categories.map { current ->
+                                                                                        if (current.id == categoryId) {
+                                                                                            current.copy(isLoadingMore = true, loadMoreError = null)
+                                                                                        } else {
+                                                                                            current
+                                                                                        }
+                                                                                    },
+                                                                                )
+                                                                                pendingLoadMoreCategoryId = categoryId
+                                                                            }
+                                                                        },
+                                                                        onAlbumSelected = { album, sourceBounds ->
+                                                                            if (detailRequest == null) {
+                                                                                detailRequest = AlbumDetailTransitionRequest(
+                                                                                    album = album,
+                                                                                    sourceBounds = sourceBounds,
+                                                                                    origin = AlbumDetailOrigin.HOME,
+                                                                                )
+                                                                            }
+                                                                        },
+                                                                        onRefresh = {
+                                                                            if (!isHomeRefreshing && homeState is HomeUiState.Content) {
+                                                                                pendingLoadMoreCategoryId = null
+                                                                                isHomeRefreshing = true
+                                                                                homeRequestId++
+                                                                            }
+                                                                        },
+                                                                        onRetry = {
+                                                                            if (homeState !is HomeUiState.Loading) {
+                                                                                homeState = HomeUiState.Loading
+                                                                                homeRequestId++
+                                                                            }
+                                                                        },
+                                                                    )
+                                                                }
+                                                            }
+
+                                                        }
+                                                    }
+                                                }
+                                                1 -> BookshelfScreen(
+                                                    categoryMenuState = bookshelfCategoryMenu,
+                                                    innerPadding = PaddingValues(
+                                                        bottom = outerPadding.calculateBottomPadding(),
+                                                    ),
+                                                    repository = bookshelfRepository,
+                                                    detailRepository = detailRepository,
+                                                    accountDataRepository = accountDataRepository,
+                                                    homeRepository = homeRepository,
+                                                    authenticated = accountProfile != null,
+                                                    onRequireLogin = ::requestLogin,
+                                                    revision = bookshelfRevision,
+                                                    liftedAlbumId = detailRequest
+                                                        ?.takeIf {
+                                                            it.origin == AlbumDetailOrigin.BOOKSHELF && it.sourceBounds != null
+                                                        }
+                                                        ?.album
+                                                        ?.id,
+                                                    onAlbumSelected = { album, sourceBounds ->
+                                                        if (detailRequest == null) {
+                                                            detailRequest = AlbumDetailTransitionRequest(
+                                                                album = album,
+                                                                sourceBounds = sourceBounds,
+                                                                origin = AlbumDetailOrigin.BOOKSHELF,
+                                                            )
+                                                        }
+                                                    },
+                                                    onOpenGroupOrder = {
+                                                        navigateAccount(JmxRoute.GROUP_ORDER)
+                                                    },
+                                                    pendingGroupId = pendingBookshelfGroupId,
+                                                    onPendingGroupConsumed = { pendingBookshelfGroupId = null },
+                                                    topBarBlurStyle = topBarBlurStyle,
+                                                    updateRecords = albumUpdateRecords,
+                                                    onRefresh = {
+                                                        // 下拉刷新走强制扫描：用户明确要求"现在就看"，
+                                                        // 不能被最小扫描间隔挡住。
+                                                        albumUpdateCenter.scan(
+                                                            includeFavorites = accountProfile != null,
+                                                            force = true,
+                                                        )
+                                                    },
+                                                )
+                                                else -> {
+                                                    val pageBackdrop = rememberBarBackdrop()
+                                                    val accountScrollBehavior = MiuixScrollBehavior()
+                                                    GlassTopBarHost {
+                                                        Scaffold(
+                                                            modifier = Modifier
+                                                                .fillMaxSize()
+                                                                .nestedScroll(accountScrollBehavior.nestedScrollConnection),
+                                                            containerColor = Color.Transparent,
+                                                            topBar = {
+                                                                BlurredBar(
+                                                                    backdrop = pageBackdrop,
+                                                                    style = topBarBlurStyle,
+                                                                ) {
+                                                                    TopAppBar(
+                                                                        title = "我的",
+                                                                        color = if (pageBackdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface,
+                                                                        scrollBehavior = accountScrollBehavior,
+                                                                        actions = {
+                                                                            IconButton(onClick = { navigateAccount(JmxRoute.SETTINGS) }) {
+                                                                                Icon(
+                                                                                    imageVector = MiuixIcons.Settings,
+                                                                                    contentDescription = "设置",
+                                                                                    tint = MiuixTheme.colorScheme.onBackground,
+                                                                                )
+                                                                            }
+                                                                        },
+                                                                    )
+                                                                }
+                                                            },
+                                                        ) { pagePadding ->
+                                                            AccountScreen(
+                                                                innerPadding = PaddingValues(
+                                                                    top = pagePadding.calculateTopPadding(),
+                                                                    bottom = outerPadding.calculateBottomPadding(),
+                                                                ),
+                                                                backdrop = pageBackdrop,
+                                                                profile = accountProfile,
+                                                                imageHost = homeRepository.currentImageHost,
+                                                                onLoginRequested = ::requestLogin,
+                                                                onLogout = {
+                                                                    accountRepository.logout()
+                                                                    accountProfile = null
+                                                                    loginFailure = null
+                                                                },
+                                                                onFavorites = { openProtectedAccountPage(JmxRoute.FAVORITES) },
+                                                                onHistory = { openProtectedAccountPage(JmxRoute.HISTORY) },
+                                                                onDaily = { openProtectedAccountPage(JmxRoute.DAILY) },
+                                                                onAbout = { navigateAccount(JmxRoute.ABOUT) },
+                                                                onDownloads = { navigateAccount(JmxRoute.DOWNLOADS) },
+                                                                // 只数收藏里的更新：仅在书架、没被收藏的漫画不该让收藏冒红点。
+                                                                // release 下 albumUpdateRecords 恒为空，角标自然不显示。
+                                                                favoriteUpdateCount = albumUpdateRecords
+                                                                    .let { countPendingFavorites(it, albumFavoriteIds) },
+                                                            )
+                                                        }
+                                                    }
+
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                // 同 Matter：按钮默认在底栏下方，菜单展开时再整体提到上层。
+                                Box(Modifier.fillMaxSize()) {
+                                    FloatingCategoryMenu(
+                                        items = if (categoryTab == 1) bookshelfCategoryMenu.items else homeCategories.map { it.title },
+                                        selectedIndex = if (categoryTab == 1) bookshelfCategoryMenu.selectedIndex else homePagerState.currentPage,
+                                        onSelect = { index ->
+                                            if (categoryTab == 1) bookshelfCategoryMenu.select(index)
+                                            else coroutineScope.launch {
+                                                homePagerState.animateScrollToPage(index)
+                                            }
+                                        },
+                                        backdrop = navigationBackdrop,
+                                        description = if (categoryTab == 1) "书架分组" else "首页分类",
+                                        bottomPadding = categoryMenuBottomPadding,
+                                        visible = categoryButtonVisible,
+                                        motion = categoryMotion.takeIf { categoryMenuBesideNavigation },
+                                        closeKey = categoryTab,
+                                    )
+                                    if (categoryMenuBesideNavigation) {
+                                        MatterLiquidGlassNavigationBar(
                                             items = liquidNavigationItems,
-                                            selectedIndex = mainPagerState.selectedPage,
+                                            modifier = Modifier.align(Alignment.BottomCenter).zIndex(1f),
+                                            motion = categoryMotion,
+                                            positionFraction = {
+                                                mainPagerState.pagerState.currentPage + mainPagerState.pagerState.currentPageOffsetFraction
+                                            },
+                                            selectedIndex = categoryTab,
                                             onItemClick = { index ->
                                                 searchExpanded = false
                                                 mainPagerState.animateToPage(index)
@@ -444,549 +811,228 @@ internal fun JmxApp(
                                             backdrop = navigationBackdrop,
                                             isBlurActive = navigationBackdrop != null,
                                         )
-                                    } else {
-                                        BlurredFloatingNavigationBar(backdrop = navigationBackdrop) {
-                                            tabs.forEachIndexed { index, tab ->
-                                                FloatingNavigationBarItem(
-                                                    selected = mainPagerState.selectedPage == index,
-                                                    onClick = {
-                                                        searchExpanded = false
-                                                        mainPagerState.animateToPage(index)
-                                                    },
-                                                    icon = tab.icon,
-                                                    label = tab.label,
-                                                )
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    BlurredBar(
-                                        backdrop = navigationBackdrop,
-                                        style = TopBarBlurStyle.GAUSSIAN,
-                                        modifier = Modifier.background(
-                                            if (navigationBackdrop != null) {
-                                                Color.Transparent
-                                            } else {
-                                                MiuixTheme.colorScheme.surface
-                                            },
-                                        ),
-                                    ) {
-                                        NavigationBar(
-                                            color = if (navigationBackdrop != null) {
-                                                Color.Transparent
-                                            } else {
-                                                MiuixTheme.colorScheme.surface
-                                            },
-                                        ) {
-                                            tabs.forEachIndexed { index, tab ->
-                                                NavigationBarItem(
-                                                    selected = mainPagerState.selectedPage == index,
-                                                    onClick = {
-                                                        searchExpanded = false
-                                                        mainPagerState.animateToPage(index)
-                                                    },
-                                                    icon = tab.icon,
-                                                    label = tab.label,
-                                                )
-                                            }
-                                        }
                                     }
                                 }
-                            },
-                        ) { outerPadding ->
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .then(
-                                        if (navigationBackdrop != null) {
-                                            Modifier.layerBackdrop(navigationBackdrop)
-                                        } else {
-                                            Modifier
-                                        },
-                                    ),
-                            ) {
-                                HorizontalPager(
-                                    state = mainPagerState.pagerState,
+                            }
+                            JmxRoute.DOWNLOADS -> OfflineDownloadsScreen(
+                                state = OfflineDownloadsUiState(
+                                    items = offlineAlbums.map { it.toDownloadUiModel() },
+                                    loading = !offlineReady,
+                                    error = offlineError,
+                                    busy = offlineBusy,
+                                ),
+                                onBack = ::navigateAccountBack,
+                                onRetry = { downloadOperation { offlineManager.retryInitialization() } },
+                                onAlbumClick = { album, bounds ->
+                                    if (detailRequest == null) downloadOperation {
+                                        val manifest = offlineManager.readerManifest(album.id)
+                                        if (manifest != null) {
+                                            detailOfflineManifest = manifest
+                                            detailRequest = AlbumDetailTransitionRequest(album, bounds, AlbumDetailOrigin.DOWNLOADS)
+                                        }
+                                    }
+                                },
+                                onDelete = { ids -> downloadOperation { offlineManager.delete(ids) } },
+                                onExport = { exportIds = it },
+                                onPause = { id -> downloadOperation { offlineManager.pause(setOf(id)) } },
+                                onResume = { id -> downloadOperation { offlineManager.resume(setOf(id)) } },
+                                onRetryDownload = { id -> downloadOperation { offlineManager.resume(setOf(id)) } },
+                                onRetryDownloads = { ids -> downloadOperation { offlineManager.resume(ids) } },
+                                topBarBlurStyle = topBarBlurStyle,
+                                liftedAlbumId = detailRequest?.takeIf { it.origin == AlbumDetailOrigin.DOWNLOADS && it.sourceBounds != null }?.album?.id,
+                            )
+                            JmxRoute.ABOUT -> AboutScreen(
+                                innerPadding = PaddingValues(),
+                                onBack = ::navigateAccountBack,
+                                onThirdParty = { navigateAccount(JmxRoute.THIRD_PARTY) },
+                            )
+                            // 分组序列自带顶栏（下拉菜单 + 完成），套不进下面 else 里那个通用顶栏。
+                            JmxRoute.GROUP_ORDER -> BookshelfGroupOrderScreen(
+                                innerPadding = PaddingValues(),
+                                repository = bookshelfRepository,
+                                onBack = {
+                                    // 顺序可能被改过，回书架时让它重新读一遍分组。
+                                    bookshelfRevision++
+                                    navigateAccountBack()
+                                },
+                                onLocateGroup = { groupId ->
+                                    pendingBookshelfGroupId = groupId
+                                    bookshelfRevision++
+                                    navigateAccountBack()
+                                },
+                                topBarBlurStyle = topBarBlurStyle,
+                            )
+                            else -> {
+                                val pageBackdrop = rememberBarBackdrop()
+                                Scaffold(
                                     modifier = Modifier.fillMaxSize(),
-                                    userScrollEnabled = false,
-                                ) { tab ->
-                                when (tab) {
-                                    0 -> {
-                                        val pageBackdrop = rememberBarBackdrop()
-                                        Scaffold(
-                                        modifier = Modifier.fillMaxSize(),
-                                        containerColor = Color.Transparent,
-                                        topBar = {
+                                    containerColor = Color.Transparent,
+                                    topBar = {
+                                        // Favorites owns its real Scaffold.topBar; this parent is only a popup host.
+                                        // Its fallback status-bar padding is not inherited by the favorites screen.
+                                        if (route != JmxRoute.FAVORITES) {
                                             BlurredBar(
                                                 backdrop = pageBackdrop,
                                                 style = topBarBlurStyle,
                                             ) {
-                                                androidx.compose.foundation.layout.Column {
                                                 SmallTopAppBar(
-                                                    title = "JMComicX",
+                                                    title = route.title,
                                                     color = if (pageBackdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface,
-                                                    modifier = Modifier.graphicsLayer {
-                                                        translationY = size.height * searchTransitionProgress * 0.72f
-                                                        alpha = 1f - searchTransitionProgress
-                                                    },
-                                                    actions = {
-                                                        IconButton(onClick = {
-                                                            prepareSearchSystemBar()
-                                                            pendingSearchQuery = null
-                                                            searchExpanded = true
-                                                        }) {
+                                                    navigationIcon = {
+                                                        IconButton(onClick = ::navigateAccountBack) {
                                                             Icon(
-                                                                imageVector = MiuixIcons.Basic.Search,
-                                                                contentDescription = "搜索",
+                                                                imageVector = MiuixIcons.Back,
+                                                                contentDescription = "返回",
                                                                 tint = MiuixTheme.colorScheme.onBackground,
                                                             )
                                                         }
                                                     },
                                                 )
-                                                val homeCategoryTitles = (homeState as? HomeUiState.Content)
-                                                    ?.categories
-                                                    ?.map { it.title }
-                                                    ?: emptyList()
-                                                dev.jmx.client.effect.BlurTabRow(
-                                                    tabs = homeCategoryTitles,
-                                                    selectedIndex = homePagerState.currentPage,
-                                                    onTabSelected = { index ->
-                                                        if (!searchExpanded && searchTransitionProgress == 0f && detailRequest == null && readerRequest == null) {
-                                                            coroutineScope.launch { homePagerState.springAnimateToPage(index) }
-                                                        }
-                                                    },
-                                                    // 指示器与标签行滚动跟随分页实时进度，手动滑动时不再滞后。
-                                                    selectionProgress = {
-                                                        homePagerState.currentPage +
-                                                            homePagerState.currentPageOffsetFraction
-                                                    },
-                                                    modifier = Modifier.graphicsLayer {
-                                                        alpha = 1f - searchTransitionProgress
-                                                    },
-                                                )
-                                                }
                                             }
-                                        },
-                                    ) { pagePadding ->
-                                        HomeScreen(
-                                            innerPadding = PaddingValues(
-                                                top = pagePadding.calculateTopPadding(),
-                                                bottom = outerPadding.calculateBottomPadding(),
-                                            ),
+                                        }
+                                    },
+                                ) { innerPadding ->
+                                    when (route) {
+                                        JmxRoute.FAVORITES,
+                                        JmxRoute.HISTORY,
+                                        -> AccountCollectionScreen(
+                                            innerPadding = if (route == JmxRoute.FAVORITES) PaddingValues() else innerPadding,
                                             backdrop = pageBackdrop,
-                                            state = homeState,
-                                            isRefreshing = isHomeRefreshing,
-                                            pagerState = homePagerState,
-                                            pagerEnabled = !searchExpanded && searchTransitionProgress == 0f && detailRequest == null && readerRequest == null,
+                                            kind = if (route == JmxRoute.FAVORITES) {
+                                                AccountCollectionKind.FAVORITES
+                                            } else {
+                                                AccountCollectionKind.HISTORY
+                                            },
+                                            repository = accountDataRepository,
+                                            selection = favoriteSelection,
+                                            topBarBlurStyle = topBarBlurStyle,
+                                            sessionRevision = accountSessionRevision,
+                                            favoriteOrder = favoriteSortOrder,
+                                            favoriteDirection = favoriteSortDirection,
+                                            updateRecords = albumUpdateRecords,
                                             liftedAlbumId = detailRequest
                                                 ?.takeIf {
-                                                    it.origin == AlbumDetailOrigin.HOME && it.sourceBounds != null
+                                                    it.origin == AlbumDetailOrigin.ACCOUNT && it.sourceBounds != null
                                                 }
                                                 ?.album
                                                 ?.id,
-                                            onLoadMore = { categoryId ->
-                                                val content = homeState as? HomeUiState.Content
-                                                val category = content?.categories?.firstOrNull { it.id == categoryId }
-                                                if (
-                                                    category != null &&
-                                                    !category.isLoadingMore &&
-                                                    !category.endReached &&
-                                                    !isHomeRefreshing &&
-                                                    pendingLoadMoreCategoryId == null
-                                                ) {
-                                                    homeState = content.copy(
-                                                        categories = content.categories.map { current ->
-                                                            if (current.id == categoryId) {
-                                                                current.copy(isLoadingMore = true, loadMoreError = null)
-                                                            } else {
-                                                                current
-                                                            }
-                                                        },
-                                                    )
-                                                    pendingLoadMoreCategoryId = categoryId
-                                                }
-                                            },
                                             onAlbumSelected = { album, sourceBounds ->
                                                 if (detailRequest == null) {
                                                     detailRequest = AlbumDetailTransitionRequest(
                                                         album = album,
                                                         sourceBounds = sourceBounds,
-                                                        origin = AlbumDetailOrigin.HOME,
+                                                        origin = AlbumDetailOrigin.ACCOUNT,
                                                     )
                                                 }
                                             },
-                                            onRefresh = {
-                                                if (!isHomeRefreshing && homeState is HomeUiState.Content) {
-                                                    pendingLoadMoreCategoryId = null
-                                                    isHomeRefreshing = true
-                                                    homeRequestId++
-                                                }
+                                            onRequireLogin = {
+                                                pendingProtectedPage = route
+                                                requestLogin()
                                             },
-                                            onRetry = {
-                                                if (homeState !is HomeUiState.Loading) {
-                                                    homeState = HomeUiState.Loading
-                                                    homeRequestId++
+                                            title = route.title.takeIf { route == JmxRoute.FAVORITES },
+                                            onBack = ::navigateAccountBack.takeIf { route == JmxRoute.FAVORITES },
+                                            topBarActions = {
+                                                if (route == JmxRoute.FAVORITES && !favoriteSelection.selecting) {
+                                                    FavoriteSortAction(
+                                                        order = favoriteSortOrder,
+                                                        direction = favoriteSortDirection,
+                                                        onExpandedChange = { favoriteSelection.sortMenuExpanded = it },
+                                                        onOrderSelected = {
+                                                            favoriteSortOrder = it
+                                                            settingsRepository.setFavoriteSortOrder(it)
+                                                        },
+                                                        onDirectionSelected = {
+                                                            favoriteSortDirection = it
+                                                            settingsRepository.setFavoriteSortDirection(it)
+                                                        },
+                                                    )
                                                 }
                                             },
                                         )
-                                        }
-                                    }
-                                    1 -> BookshelfScreen(
-                                        innerPadding = PaddingValues(
-                                            bottom = outerPadding.calculateBottomPadding(),
-                                        ),
-                                        repository = bookshelfRepository,
-                                        detailRepository = detailRepository,
-                                        accountDataRepository = accountDataRepository,
-                                        homeRepository = homeRepository,
-                                        authenticated = accountProfile != null,
-                                        onRequireLogin = ::requestLogin,
-                                        revision = bookshelfRevision,
-                                        liftedAlbumId = detailRequest
-                                            ?.takeIf {
-                                                it.origin == AlbumDetailOrigin.BOOKSHELF && it.sourceBounds != null
-                                            }
-                                            ?.album
-                                            ?.id,
-                                        onAlbumSelected = { album, sourceBounds ->
-                                            if (detailRequest == null) {
-                                                detailRequest = AlbumDetailTransitionRequest(
-                                                    album = album,
-                                                    sourceBounds = sourceBounds,
-                                                    origin = AlbumDetailOrigin.BOOKSHELF,
-                                                )
-                                            }
-                                        },
-                                        onOpenGroupOrder = {
-                                            navigateAccount(JmxRoute.GROUP_ORDER)
-                                        },
-                                        pendingGroupId = pendingBookshelfGroupId,
-                                        onPendingGroupConsumed = { pendingBookshelfGroupId = null },
-                                        topBarBlurStyle = topBarBlurStyle,
-                                        updateRecords = albumUpdateRecords,
-                                        onRefresh = {
-                                            // 下拉刷新走强制扫描：用户明确要求"现在就看"，
-                                            // 不能被最小扫描间隔挡住。
-                                            albumUpdateCenter.scan(
-                                                includeFavorites = accountProfile != null,
-                                                force = true,
+                                        JmxRoute.DAILY -> accountProfile?.let {
+                                            DailyCheckScreen(
+                                                innerPadding = innerPadding,
+                                                profile = it,
+                                                repository = accountDataRepository,
+                                                onRequireLogin = {
+                                                    pendingProtectedPage = route
+                                                    requestLogin()
+                                                },
                                             )
-                                        },
-                                    )
-                                    else -> {
-                                        val pageBackdrop = rememberBarBackdrop()
-                                        Scaffold(
-                                        modifier = Modifier.fillMaxSize(),
-                                        containerColor = Color.Transparent,
-                                        topBar = {
-                                            BlurredBar(
-                                                backdrop = pageBackdrop,
-                                                style = topBarBlurStyle,
-                                            ) {
-                                                SmallTopAppBar(
-                                                    title = "我的",
-                                                    color = if (pageBackdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface,
-                                                    actions = {
-                                                        IconButton(onClick = { navigateAccount(JmxRoute.SETTINGS) }) {
-                                                            Icon(
-                                                                imageVector = MiuixIcons.Settings,
-                                                                contentDescription = "设置",
-                                                                tint = MiuixTheme.colorScheme.onBackground,
-                                                            )
-                                                        }
-                                                    },
-                                                )
-                                            }
-                                        },
-                                    ) { pagePadding ->
-                                        AccountScreen(
-                                            innerPadding = PaddingValues(
-                                                top = pagePadding.calculateTopPadding(),
-                                                bottom = outerPadding.calculateBottomPadding(),
-                                            ),
-                                            backdrop = pageBackdrop,
-                                            profile = accountProfile,
+                                        } ?: AccountScreen(
+                                            innerPadding = innerPadding,
+                                            profile = null,
                                             imageHost = homeRepository.currentImageHost,
                                             onLoginRequested = ::requestLogin,
-                                            onLogout = {
-                                                accountRepository.logout()
-                                                accountProfile = null
-                                                loginFailure = null
-                                            },
+                                            onLogout = {},
                                             onFavorites = { openProtectedAccountPage(JmxRoute.FAVORITES) },
                                             onHistory = { openProtectedAccountPage(JmxRoute.HISTORY) },
                                             onDaily = { openProtectedAccountPage(JmxRoute.DAILY) },
                                             onAbout = { navigateAccount(JmxRoute.ABOUT) },
                                             onDownloads = { navigateAccount(JmxRoute.DOWNLOADS) },
-                                            // 只数收藏里的更新：仅在书架、没被收藏的漫画不该让收藏冒红点。
-                                            // release 下 albumUpdateRecords 恒为空，角标自然不显示。
-                                            favoriteUpdateCount = albumUpdateRecords
-                                                .let { countPendingFavorites(it, albumFavoriteIds) },
                                         )
-                                        }
-                                    }
-                                    }
-                                }
-                                    }
-                                }
-                        }
-                        JmxRoute.DOWNLOADS -> OfflineDownloadsScreen(
-                            state = OfflineDownloadsUiState(
-                                items = offlineAlbums.map { it.toDownloadUiModel() },
-                                loading = !offlineReady,
-                                error = offlineError,
-                                busy = offlineBusy,
-                            ),
-                            onBack = ::navigateAccountBack,
-                            onRetry = { downloadOperation { offlineManager.retryInitialization() } },
-                            onAlbumClick = { album, bounds ->
-                                if (detailRequest == null) downloadOperation {
-                                    val manifest = offlineManager.readerManifest(album.id)
-                                    if (manifest != null) {
-                                        detailOfflineManifest = manifest
-                                        detailRequest = AlbumDetailTransitionRequest(album, bounds, AlbumDetailOrigin.DOWNLOADS)
-                                    }
-                                }
-                            },
-                            onDelete = { ids -> downloadOperation { offlineManager.delete(ids) } },
-                            onExport = { exportIds = it },
-                            onPause = { id -> downloadOperation { offlineManager.pause(setOf(id)) } },
-                            onResume = { id -> downloadOperation { offlineManager.resume(setOf(id)) } },
-                            onRetryDownload = { id -> downloadOperation { offlineManager.resume(setOf(id)) } },
-                            onRetryDownloads = { ids -> downloadOperation { offlineManager.resume(ids) } },
-                            topBarBlurStyle = topBarBlurStyle,
-                            liftedAlbumId = detailRequest?.takeIf { it.origin == AlbumDetailOrigin.DOWNLOADS && it.sourceBounds != null }?.album?.id,
-                        )
-                        JmxRoute.ABOUT -> AboutScreen(
-                            innerPadding = PaddingValues(),
-                            onBack = ::navigateAccountBack,
-                            onThirdParty = { navigateAccount(JmxRoute.THIRD_PARTY) },
-                        )
-                        // 分组序列自带顶栏（下拉菜单 + 完成），套不进下面 else 里那个通用顶栏。
-                        JmxRoute.GROUP_ORDER -> BookshelfGroupOrderScreen(
-                            innerPadding = PaddingValues(),
-                            repository = bookshelfRepository,
-                            onBack = {
-                                // 顺序可能被改过，回书架时让它重新读一遍分组。
-                                bookshelfRevision++
-                                navigateAccountBack()
-                            },
-                            onLocateGroup = { groupId ->
-                                pendingBookshelfGroupId = groupId
-                                bookshelfRevision++
-                                navigateAccountBack()
-                            },
-                            topBarBlurStyle = topBarBlurStyle,
-                        )
-                        else -> {
-                            val pageBackdrop = rememberBarBackdrop()
-                            Scaffold(
-                            modifier = Modifier.fillMaxSize(),
-                            containerColor = Color.Transparent,
-                            topBar = {
-                                // Favorites owns its real Scaffold.topBar; this parent is only a popup host.
-                                // Its fallback status-bar padding is not inherited by the favorites screen.
-                                if (route != JmxRoute.FAVORITES) {
-                                BlurredBar(
-                                    backdrop = pageBackdrop,
-                                    style = topBarBlurStyle,
-                                ) {
-                                    SmallTopAppBar(
-                                        title = route.title,
-                                        color = if (pageBackdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface,
-                                        navigationIcon = {
-                                            IconButton(onClick = ::navigateAccountBack) {
-                                                Icon(
-                                                    imageVector = MiuixIcons.Back,
-                                                    contentDescription = "返回",
-                                                    tint = MiuixTheme.colorScheme.onBackground,
+                                        JmxRoute.THIRD_PARTY -> ThirdPartyListScreen(innerPadding)
+                                        JmxRoute.SETTINGS -> SettingsScreen(
+                                            innerPadding = innerPadding,
+                                            backdrop = pageBackdrop,
+                                            repository = settingsRepository,
+                                            themeMode = themeMode,
+                                            onThemeModeChanged = onThemeModeChanged,
+                                            autoCheckIn = autoCheckIn,
+                                            onAutoCheckInChanged = {
+                                                autoCheckIn = it
+                                                settingsRepository.setAutoCheckInEnabled(it)
+                                            },
+                                            autoCheckUpdates = updateState.autoCheckEnabled,
+                                            checkingForUpdates = updateState.checking,
+                                            currentVersion = updateManager.localVersionName,
+                                            onAutoCheckUpdatesChanged = updateManager::setAutoCheckEnabled,
+                                            onCheckForUpdates = {
+                                                coroutineScope.launch {
+                                                    updateManager.checkForUpdates(manual = true)
+                                                }
+                                            },
+                                            onImageHostChanged = { homeRequestId++ },
+                                            onContentLanguageChanged = {
+                                                // 简繁由服务端渲染后返回，已加载的标题/简介/标签不会自行变化，
+                                                // 必须像切换图源那样丢弃当前内容重新请求。
+                                                homeRequestId++
+                                                bookshelfRevision++
+                                                accountSessionRevision++
+                                            },
+                                            onTopBarBlurStyleChanged = { topBarBlurStyle = it },
+                                            onLiquidGlassNavBarChanged = { liquidGlassNavBar = it },
+                                            onFloatingNavBarStyleChanged = { floatingNavBarStyle = it },
+                                            comicUpdateSummary = albumUpdateSummary,
+                                            scanningComicUpdates = scanningAlbumUpdates,
+                                            onScanComicUpdates = {
+                                                coroutineScope.launch {
+                                                    albumUpdateCenter.scan(
+                                                        includeFavorites = accountProfile != null,
+                                                        force = true,
+                                                    )
+                                                }
+                                            },
+                                            onSimulateComicUpdates = {
+                                                albumUpdateCenter.simulateUpdates(
+                                                    albums = SIMULATED_UPDATE_ALBUMS,
+                                                    chapters = SIMULATED_UPDATE_CHAPTERS,
                                                 )
-                                            }
-                                        },
-                                    )
-                                }
-                                }
-                            },
-                        ) { innerPadding ->
-                            when (route) {
-                                JmxRoute.FAVORITES,
-                                JmxRoute.HISTORY,
-                                -> AccountCollectionScreen(
-                                    innerPadding = if (route == JmxRoute.FAVORITES) PaddingValues() else innerPadding,
-                                    backdrop = pageBackdrop,
-                                    kind = if (route == JmxRoute.FAVORITES) {
-                                        AccountCollectionKind.FAVORITES
-                                    } else {
-                                        AccountCollectionKind.HISTORY
-                                    },
-                                    repository = accountDataRepository,
-                                    selection = favoriteSelection,
-                                    topBarBlurStyle = topBarBlurStyle,
-                                    sessionRevision = accountSessionRevision,
-                                    favoriteOrder = favoriteSortOrder,
-                                    favoriteDirection = favoriteSortDirection,
-                                    updateRecords = albumUpdateRecords,
-                                    liftedAlbumId = detailRequest
-                                        ?.takeIf {
-                                            it.origin == AlbumDetailOrigin.ACCOUNT && it.sourceBounds != null
-                                        }
-                                        ?.album
-                                        ?.id,
-                                    onAlbumSelected = { album, sourceBounds ->
-                                        if (detailRequest == null) {
-                                            detailRequest = AlbumDetailTransitionRequest(
-                                                album = album,
-                                                sourceBounds = sourceBounds,
-                                                origin = AlbumDetailOrigin.ACCOUNT,
-                                            )
-                                        }
-                                    },
-                                    onRequireLogin = {
-                                        pendingProtectedPage = route
-                                        requestLogin()
-                                    },
-                                    title = route.title.takeIf { route == JmxRoute.FAVORITES },
-                                    onBack = ::navigateAccountBack.takeIf { route == JmxRoute.FAVORITES },
-                                    topBarActions = {
-                                        if (route == JmxRoute.FAVORITES && !favoriteSelection.selecting) {
-                                            FavoriteSortAction(
-                                                order = favoriteSortOrder,
-                                                direction = favoriteSortDirection,
-                                                onExpandedChange = { favoriteSelection.sortMenuExpanded = it },
-                                                onOrderSelected = {
-                                                    favoriteSortOrder = it
-                                                    settingsRepository.setFavoriteSortOrder(it)
-                                                },
-                                                onDirectionSelected = {
-                                                    favoriteSortDirection = it
-                                                    settingsRepository.setFavoriteSortDirection(it)
-                                                },
-                                            )
-                                        }
-                                    },
-                                )
-                                JmxRoute.DAILY -> accountProfile?.let {
-                                    DailyCheckScreen(
-                                        innerPadding = innerPadding,
-                                        profile = it,
-                                        repository = accountDataRepository,
-                                        onRequireLogin = {
-                                            pendingProtectedPage = route
-                                            requestLogin()
-                                        },
-                                    )
-                                } ?: AccountScreen(
-                                    innerPadding = innerPadding,
-                                    profile = null,
-                                    imageHost = homeRepository.currentImageHost,
-                                    onLoginRequested = ::requestLogin,
-                                    onLogout = {},
-                                    onFavorites = { openProtectedAccountPage(JmxRoute.FAVORITES) },
-                                    onHistory = { openProtectedAccountPage(JmxRoute.HISTORY) },
-                                    onDaily = { openProtectedAccountPage(JmxRoute.DAILY) },
-                                    onAbout = { navigateAccount(JmxRoute.ABOUT) },
-                                            onDownloads = { navigateAccount(JmxRoute.DOWNLOADS) },
-                                )
-                                JmxRoute.THIRD_PARTY -> ThirdPartyListScreen(innerPadding)
-                                JmxRoute.SETTINGS -> SettingsScreen(
-                                    innerPadding = innerPadding,
-                                    backdrop = pageBackdrop,
-                                    repository = settingsRepository,
-                                    themeMode = themeMode,
-                                    onThemeModeChanged = onThemeModeChanged,
-                                    autoCheckIn = autoCheckIn,
-                                    onAutoCheckInChanged = {
-                                        autoCheckIn = it
-                                        settingsRepository.setAutoCheckInEnabled(it)
-                                    },
-                                    autoCheckUpdates = updateState.autoCheckEnabled,
-                                    checkingForUpdates = updateState.checking,
-                                    currentVersion = updateManager.localVersionName,
-                                    onAutoCheckUpdatesChanged = updateManager::setAutoCheckEnabled,
-                                    onCheckForUpdates = {
-                                        coroutineScope.launch {
-                                            updateManager.checkForUpdates(manual = true)
-                                        }
-                                    },
-                                    onImageHostChanged = { homeRequestId++ },
-                                    onContentLanguageChanged = {
-                                        // 简繁由服务端渲染后返回，已加载的标题/简介/标签不会自行变化，
-                                        // 必须像切换图源那样丢弃当前内容重新请求。
-                                        homeRequestId++
-                                        bookshelfRevision++
-                                        accountSessionRevision++
-                                    },
-                                    onTopBarBlurStyleChanged = { topBarBlurStyle = it },
-                                    onLiquidGlassNavBarChanged = { liquidGlassNavBar = it },
-                                    onFloatingNavBarStyleChanged = { floatingNavBarStyle = it },
-                                    comicUpdateSummary = albumUpdateSummary,
-                                    scanningComicUpdates = scanningAlbumUpdates,
-                                    onScanComicUpdates = {
-                                        coroutineScope.launch {
-                                            albumUpdateCenter.scan(
-                                                includeFavorites = accountProfile != null,
-                                                force = true,
-                                            )
-                                        }
-                                    },
-                                    onSimulateComicUpdates = {
-                                        albumUpdateCenter.simulateUpdates(
-                                            albums = SIMULATED_UPDATE_ALBUMS,
-                                            chapters = SIMULATED_UPDATE_CHAPTERS,
+                                            },
+                                            onClearComicUpdates = albumUpdateCenter::clearAllPending,
                                         )
-                                    },
-                                    onClearComicUpdates = albumUpdateCenter::clearAllPending,
-                                )
-                                JmxRoute.MAIN,
-                                JmxRoute.ABOUT,
-                                JmxRoute.GROUP_ORDER,
-                                JmxRoute.DOWNLOADS,
-                                -> Unit
+                                        JmxRoute.MAIN,
+                                        JmxRoute.ABOUT,
+                                        JmxRoute.GROUP_ORDER,
+                                        JmxRoute.DOWNLOADS,
+                                        -> Unit
+                                    }
+                                }
                             }
                         }
-                        }
-                    }
                     }
                 }
-            }
 
-        AnimatedVisibility(
-            visible = searchExpanded && activeTab == 0,
-            enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 5 }),
-            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it / 5 }),
-            modifier = Modifier
-                .fillMaxSize()
-                .zIndex(5f),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MiuixTheme.colorScheme.surface),
-            ) {
-                ComicSearchScreen(
-                    homeRepository = homeRepository,
-                    initialQuery = pendingSearchQuery,
-                    manageSystemBar = detailRequest == null && readerRequest == null,
-                    liftedAlbumId = detailRequest
-                        ?.takeIf {
-                            it.origin == AlbumDetailOrigin.SEARCH && it.sourceBounds != null
-                        }
-                        ?.album
-                        ?.id,
-                    onDismiss = {
-                        searchExpanded = false
-                        pendingSearchQuery = null
-                    },
-                    onAlbumSelected = { album, sourceBounds ->
-                        if (detailRequest == null) {
-                            detailRequest = AlbumDetailTransitionRequest(
-                                album = album,
-                                sourceBounds = sourceBounds,
-                                origin = AlbumDetailOrigin.SEARCH,
-                            )
-                        }
-                    },
-                )
             }
         }
 
@@ -1025,6 +1071,7 @@ internal fun JmxApp(
                     bookshelfRepository = bookshelfRepository,
                     onBookshelfChanged = { bookshelfRevision++ },
                     onFavoriteChanged = { added ->
+                        favoriteMembership.setFavorite(request.album.id, added)
                         accountSessionRevision++
                         accountProfile?.let { profile ->
                             val current = profile.currentFavoriteCount ?: 0
@@ -1038,7 +1085,6 @@ internal fun JmxApp(
                         }
                     },
                     onSearchRequested = { query ->
-                        prepareSearchSystemBar()
                         pendingSearchQuery = query
                         while (routeStack.size > 1) routeStack.removeAt(routeStack.lastIndex)
                         mainPagerState.animateToPage(0)

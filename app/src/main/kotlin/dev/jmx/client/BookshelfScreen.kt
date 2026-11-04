@@ -4,13 +4,13 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,17 +24,18 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -63,7 +65,10 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import dev.jmx.client.core.protocol.JmxMagicConstants
 import dev.jmx.client.core.result.JmxResult
-import top.yukonga.miuix.kmp.blur.layerBackdrop
+import dev.jmx.client.effect.liquid.BindTopBarGlassScroll
+import dev.jmx.client.effect.liquid.FloatingCategoryMenuState
+import dev.jmx.client.effect.liquid.GlassTopBarActions
+import dev.jmx.client.effect.liquid.GlassTopBarHost
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -72,13 +77,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Checkbox
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.PullToRefresh
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
@@ -88,12 +92,14 @@ import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.basic.TopAppBarDefaults
+import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Search
-import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.AddFolder
+import top.yukonga.miuix.kmp.icon.extended.Close
+import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
 import top.yukonga.miuix.kmp.icon.extended.Import
 import top.yukonga.miuix.kmp.icon.extended.ListView
@@ -101,15 +107,14 @@ import top.yukonga.miuix.kmp.icon.extended.Notes
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.SelectAll
 import top.yukonga.miuix.kmp.icon.extended.Share
-import top.yukonga.miuix.kmp.icon.extended.Close
-import top.yukonga.miuix.kmp.menu.WindowIconCascadingDropdownMenu
 import top.yukonga.miuix.kmp.menu.WindowIconDropdownMenu
 import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.PagerGestureNestedScrollConnection
-import top.yukonga.miuix.kmp.utils.pagerGestureOverride
 import top.yukonga.miuix.kmp.utils.springAnimateToPage
 import top.yukonga.miuix.kmp.window.WindowDialog
+import dev.jmx.client.effect.liquid.GlassTopBarDropdownMenu as WindowIconCascadingDropdownMenu
+import dev.jmx.client.effect.liquid.GlassTopBarIcon as Icon
+import dev.jmx.client.effect.liquid.GlassTopBarIconButton as IconButton
 
 @Composable
 internal fun BookshelfScreen(
@@ -130,6 +135,7 @@ internal fun BookshelfScreen(
     topBarBlurStyle: dev.jmx.client.effect.TopBarBlurStyle = dev.jmx.client.effect.TopBarBlurStyle.GAUSSIAN,
     updateRecords: Map<String, AlbumUpdateRecord> = emptyMap(),
     onRefresh: suspend () -> Unit = {},
+    categoryMenuState: FloatingCategoryMenuState,
 ) {
     val activeBarBackdrop = barBackdrop ?: dev.jmx.client.effect.rememberBarBackdrop()
     var groups by remember(repository) { mutableStateOf(repository.groups()) }
@@ -360,6 +366,12 @@ internal fun BookshelfScreen(
             }
         }
     }
+    val displayTabs = remember(groupTabs, badgedTabs) {
+        if (badgedTabs.isEmpty()) groupTabs
+        else groupTabs.mapIndexed { index, name ->
+            if (index in badgedTabs) "$name ·" else name
+        }
+    }
     val selectedGroupIndex = (groups.indexOfFirst { it.id == selectedGroupId } + 1).coerceAtLeast(0)
     val pagerState = rememberPagerState(initialPage = selectedGroupIndex) { groupTabs.size }
 
@@ -412,6 +424,14 @@ internal fun BookshelfScreen(
     val pagerEnabled = !selectionMode && !menuExpanded && !showGroupEditor && !showGroupManager && !showManualPicker &&
         !showSelectionGroupPicker && !showExportDialog && pendingRemoval.isEmpty() && pendingGroupDeletion == null &&
         pendingImport == null && pendingImportReplace == null && !operationRunning && !transferRunning && operationMessage == null
+    SideEffect {
+        categoryMenuState.update(
+            items = displayTabs,
+            selectedIndex = pagerState.currentPage,
+            available = pagerEnabled && liftedAlbumId == null,
+            onSelect = { index -> coroutineScope.launch { pagerState.springAnimateToPage(index) } },
+        )
+    }
     val menuEntry = DropdownEntry(
         items = buildList {
             add(
@@ -468,249 +488,253 @@ internal fun BookshelfScreen(
         },
     )
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = androidx.compose.ui.graphics.Color.Transparent,
-        topBar = {
-            dev.jmx.client.effect.BlurredBar(
-                backdrop = activeBarBackdrop,
-                style = topBarBlurStyle,
-            ) {
-            androidx.compose.foundation.layout.Column {
-            AnimatedContent(
-                targetState = selectionMode,
-                transitionSpec = {
-                    (fadeIn(tween(220)) + slideInVertically { it / 3 }) togetherWith
-                        (fadeOut(tween(140)) + slideOutVertically { -it / 4 })
-                },
-                label = "BookshelfTopBarMode",
-            ) { multiSelect ->
-                SmallTopAppBar(
-                    title = if (multiSelect) "已选择 ${selectedIds.size} 部" else "书架",
-                    titlePadding = if (multiSelect) 8.dp else TopAppBarDefaults.TitlePadding,
-                    color = if (activeBarBackdrop != null) androidx.compose.ui.graphics.Color.Transparent else MiuixTheme.colorScheme.surface,
-                    navigationIcon = {
-                        if (!multiSelect) {
-                            IconButton(
-                                onClick = { importLauncher.launch(arrayOf("*/*")) },
-                                enabled = !transferRunning,
-                                minWidth = 42.dp,
-                                minHeight = 42.dp,
-                            ) {
-                                Icon(
-                                    imageVector = MiuixIcons.Import,
-                                    contentDescription = "导入书架文件",
-                                    tint = MiuixTheme.colorScheme.onBackground,
-                                )
-                            }
-                        }
-                    },
-                    actions = {
-                        if (multiSelect) {
-                            IconButton(
-                                onClick = {
-                                    val visibleIds = entries.mapTo(mutableSetOf(), BookshelfEntry::albumId)
-                                    selectedIds = if (selectedIds.containsAll(visibleIds)) {
-                                        emptySet()
-                                    } else {
-                                        visibleIds
-                                    }
-                                },
-                                minWidth = 42.dp,
-                                minHeight = 42.dp,
-                            ) {
-                                Icon(
-                                    imageVector = MiuixIcons.SelectAll,
-                                    contentDescription = "全选当前分组",
-                                    tint = MiuixTheme.colorScheme.onBackground,
-                                )
-                            }
-                            if (selectedGroupId == ALL_BOOKSHELF_GROUP_ID && groups.isNotEmpty()) {
-                                IconButton(
-                                    onClick = { showSelectionGroupPicker = true },
-                                    enabled = selectedIds.isNotEmpty(),
-                                    minWidth = 42.dp,
-                                    minHeight = 42.dp,
-                                ) {
-                                    Icon(
-                                        imageVector = MiuixIcons.AddFolder,
-                                        contentDescription = "将已选漫画加入分组",
-                                        tint = MiuixTheme.colorScheme.primary,
-                                    )
-                                }
-                            }
-                            IconButton(
-                                onClick = { pendingRemoval = selectedIds },
-                                enabled = selectedIds.isNotEmpty(),
-                                minWidth = 42.dp,
-                                minHeight = 42.dp,
-                            ) {
-                                Icon(
-                                    imageVector = MiuixIcons.Delete,
-                                    contentDescription = "删除已选漫画",
-                                    tint = MiuixTheme.colorScheme.error,
-                                )
-                            }
-                            IconButton(
-                                onClick = {
-                                    selectionMode = false
-                                    selectedIds = emptySet()
-                                },
-                                minWidth = 42.dp,
-                                minHeight = 42.dp,
-                            ) {
-                                Icon(
-                                    imageVector = MiuixIcons.Close,
-                                    contentDescription = "退出多选",
-                                    tint = MiuixTheme.colorScheme.onBackground,
-                                )
-                            }
-                        } else {
-                            IconButton(
-                                onClick = { showExportDialog = true },
-                                enabled = !transferRunning,
-                                minWidth = 42.dp,
-                                minHeight = 42.dp,
-                            ) {
-                                Icon(
-                                    imageVector = MiuixIcons.Share,
-                                    contentDescription = "导出书架",
-                                    tint = MiuixTheme.colorScheme.onBackground,
-                                )
-                            }
-                            WindowIconCascadingDropdownMenu(entry = menuEntry, onExpandedChange = { menuExpanded = it }) {
-                                Icon(
-                                    imageVector = MiuixIcons.ListView,
-                                    contentDescription = "书架功能菜单",
-                                    tint = MiuixTheme.colorScheme.onBackground,
-                                )
-                            }
-                        }
-                    },
-                )
-            }
-            if (!selectionMode) {
-                dev.jmx.client.effect.BlurTabRow(
-                    tabs = groupTabs,
-                    selectedIndex = pagerState.currentPage,
-                    onTabSelected = { index ->
-                        if (pagerEnabled) coroutineScope.launch { pagerState.springAnimateToPage(index) }
-                    },
-                    // 指示器跟随分页实时进度，手动滑动分组时标签不再等惯性停稳才切换。
-                    selectionProgress = {
-                        pagerState.currentPage + pagerState.currentPageOffsetFraction
-                    },
-                    badgedTabs = badgedTabs,
-                )
-            }
-            }
-            }
-        },
-    ) { pagePadding ->
-        val topInset = pagePadding.calculateTopPadding()
-        Box(modifier = Modifier.fillMaxSize()) {
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pagerGestureOverride(pagerState, enabled = pagerEnabled)
-                        .then(if (activeBarBackdrop != null) Modifier.layerBackdrop(activeBarBackdrop) else Modifier),
-                    userScrollEnabled = false,
-                    pageNestedScrollConnection = PagerGestureNestedScrollConnection,
-                    key = { page -> groups.getOrNull(page - 1)?.id ?: ALL_BOOKSHELF_GROUP_ID },
-                ) { page ->
-                val pageGroupId = groups.getOrNull(page - 1)?.id ?: ALL_BOOKSHELF_GROUP_ID
-                val pageEntries = remember(pageGroupId, sortOrder, sortDirection, revision, contentRevision) {
-                    repository.entries(pageGroupId, sortOrder, sortDirection)
-                }
-                val pullToRefreshState = rememberPullToRefreshState()
-                PullToRefresh(
-                    // 只让当前页显示刷新动效：分页器会同时组合相邻页，否则左右页也会跟着转圈。
-                    isRefreshing = refreshing && pagerState.currentPage == page,
-                    onRefresh = ::refreshBookshelf,
-                    pullToRefreshState = pullToRefreshState,
-                    refreshTexts = listOf("下拉刷新", "松开刷新", "正在刷新", "刷新完成"),
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                if (pageEntries.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize().padding(top = topInset)) {
-                        BookshelfEmptyState(customGroup = page > 0)
-                    }
-                } else {
-                    val gridState = rememberLazyGridState()
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
-                        state = gridState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 12.dp, top = topInset + 12.dp, end = 12.dp, bottom = 28.dp + innerPadding.calculateBottomPadding()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
+    val bookshelfScrollBehavior = MiuixScrollBehavior(canScroll = { !selectionMode })
+
+    GlassTopBarHost {
+        Box(Modifier.fillMaxSize()) {
+            Scaffold(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .nestedScroll(bookshelfScrollBehavior.nestedScrollConnection),
+                containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                topBar = {
+                    dev.jmx.client.effect.BlurredBar(
+                        backdrop = activeBarBackdrop,
+                        style = topBarBlurStyle,
                     ) {
-                        items(pageEntries, key = BookshelfEntry::albumId) { entry ->
-                            val album = entry.toHomeAlbum()
-                            Column {
-                                Box {
-                                    AlbumItem(
-                                        album = album,
-                                        coverLifted = album.id == liftedAlbumId,
-                                        onSelected = { selected, bounds ->
-                                            if (selectionMode) {
-                                                selectedIds = if (selected.id in selectedIds) {
-                                                    selectedIds - selected.id
-                                                } else {
-                                                    selectedIds + selected.id
-                                                }
-                                            } else {
-                                                onAlbumSelected(selected, bounds)
+                        AnimatedContent(
+                            targetState = selectionMode,
+                            transitionSpec = {
+                                (fadeIn(tween(220)) + slideInVertically { it / 3 }) togetherWith
+                                    (fadeOut(tween(140)) + slideOutVertically { -it / 4 })
+                            },
+                            label = "BookshelfTopBarMode",
+                        ) { multiSelect ->
+                            if (multiSelect) {
+                                SmallTopAppBar(
+                                    title = "已选择 ${selectedIds.size} 部",
+                                    titlePadding = 8.dp,
+                                    color = if (activeBarBackdrop != null) androidx.compose.ui.graphics.Color.Transparent else MiuixTheme.colorScheme.surface,
+                                    actions = {
+                                        GlassTopBarActions {
+                                            IconButton(
+                                                onClick = {
+                                                    val visibleIds = entries.mapTo(mutableSetOf(), BookshelfEntry::albumId)
+                                                    selectedIds = if (selectedIds.containsAll(visibleIds)) {
+                                                        emptySet()
+                                                    } else {
+                                                        visibleIds
+                                                    }
+                                                },
+                                                minWidth = 42.dp,
+                                                minHeight = 42.dp,
+                                            ) {
+                                                Icon(
+                                                    imageVector = MiuixIcons.SelectAll,
+                                                    contentDescription = "全选当前分组",
+                                                    tint = MiuixTheme.colorScheme.onBackground,
+                                                )
                                             }
-                                        },
-                                        onLongSelected = {
-                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            selectionMode = true
-                                            selectedIds = selectedIds + entry.albumId
-                                        },
-                                        // 多选态下不画更新角标：那时封面上已经压了一层选中遮罩。
-                                        updateChapters = if (selectionMode) {
-                                            0
-                                        } else {
-                                            updateRecords[entry.albumId]?.pendingChapters ?: 0
-                                        },
-                                        selected = (entry.albumId in selectedIds).takeIf { selectionMode },
-                                        selectionOverlay = {
-                                            if (selectionMode) AlbumSelectionOverlay(
-                                                selected = entry.albumId in selectedIds,
-                                                modifier = Modifier.matchParentSize(),
+                                            if (selectedGroupId == ALL_BOOKSHELF_GROUP_ID && groups.isNotEmpty()) {
+                                                IconButton(
+                                                    onClick = { showSelectionGroupPicker = true },
+                                                    enabled = selectedIds.isNotEmpty(),
+                                                    minWidth = 42.dp,
+                                                    minHeight = 42.dp,
+                                                ) {
+                                                    Icon(
+                                                        imageVector = MiuixIcons.AddFolder,
+                                                        contentDescription = "将已选漫画加入分组",
+                                                        tint = MiuixTheme.colorScheme.primary,
+                                                    )
+                                                }
+                                            }
+                                            IconButton(
+                                                onClick = { pendingRemoval = selectedIds },
+                                                enabled = selectedIds.isNotEmpty(),
+                                                minWidth = 42.dp,
+                                                minHeight = 42.dp,
+                                            ) {
+                                                Icon(
+                                                    imageVector = MiuixIcons.Delete,
+                                                    contentDescription = "删除已选漫画",
+                                                    tint = MiuixTheme.colorScheme.error,
+                                                )
+                                            }
+                                            IconButton(
+                                                onClick = {
+                                                    selectionMode = false
+                                                    selectedIds = emptySet()
+                                                },
+                                                minWidth = 42.dp,
+                                                minHeight = 42.dp,
+                                            ) {
+                                                Icon(
+                                                    imageVector = MiuixIcons.Close,
+                                                    contentDescription = "退出多选",
+                                                    tint = MiuixTheme.colorScheme.onBackground,
+                                                )
+                                            }
+
+                                        }
+                                    },
+                                )
+                            } else {
+                                TopAppBar(
+                                    title = "书架",
+                                    color = if (activeBarBackdrop != null) androidx.compose.ui.graphics.Color.Transparent else MiuixTheme.colorScheme.surface,
+                                    scrollBehavior = bookshelfScrollBehavior,
+                                    navigationIcon = {
+                                        IconButton(
+                                            onClick = { importLauncher.launch(arrayOf("*/*")) },
+                                            enabled = !transferRunning,
+                                            minWidth = 42.dp,
+                                            minHeight = 42.dp,
+                                        ) {
+                                            Icon(
+                                                imageVector = MiuixIcons.Import,
+                                                contentDescription = "导入书架文件",
+                                                tint = MiuixTheme.colorScheme.onBackground,
                                             )
-                                        },
-                                    )
+                                        }
+                                    },
+                                    actions = {
+                                        GlassTopBarActions {
+                                            IconButton(
+                                                onClick = { showExportDialog = true },
+                                                enabled = !transferRunning,
+                                                minWidth = 42.dp,
+                                                minHeight = 42.dp,
+                                            ) {
+                                                Icon(
+                                                    imageVector = MiuixIcons.Share,
+                                                    contentDescription = "导出书架",
+                                                    tint = MiuixTheme.colorScheme.onBackground,
+                                                )
+                                            }
+                                            WindowIconCascadingDropdownMenu(entry = menuEntry, onExpandedChange = { menuExpanded = it }) {
+                                                Icon(
+                                                    imageVector = MiuixIcons.ListView,
+                                                    contentDescription = "书架功能菜单",
+                                                    tint = MiuixTheme.colorScheme.onBackground,
+                                                )
+                                            }
+
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
+                },
+            ) { pagePadding ->
+                val topInset = pagePadding.calculateTopPadding()
+                // 与首页一致：分组 Pager 使用默认连接，由外层主 Pager 统一承担速度返还适配。
+                Box(modifier = Modifier.fillMaxSize()) {
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(if (activeBarBackdrop != null) Modifier.layerBackdrop(activeBarBackdrop) else Modifier),
+                        userScrollEnabled = pagerEnabled,
+                        key = { page -> groups.getOrNull(page - 1)?.id ?: ALL_BOOKSHELF_GROUP_ID },
+                    ) { page ->
+                        val pageGroupId = groups.getOrNull(page - 1)?.id ?: ALL_BOOKSHELF_GROUP_ID
+                        val pageEntries = remember(pageGroupId, sortOrder, sortDirection, revision, contentRevision) {
+                            repository.entries(pageGroupId, sortOrder, sortDirection)
+                        }
+                        val pullToRefreshState = rememberPullToRefreshState()
+                        PullToRefresh(
+                            // 只让当前页显示刷新动效：分页器会同时组合相邻页，否则左右页也会跟着转圈。
+                            isRefreshing = refreshing && pagerState.currentPage == page,
+                            onRefresh = ::refreshBookshelf,
+                            pullToRefreshState = pullToRefreshState,
+                            refreshTexts = listOf("下拉刷新", "松开刷新", "正在刷新", "刷新完成"),
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            if (pageEntries.isEmpty()) {
+                                Box(modifier = Modifier.fillMaxSize().padding(top = topInset)) {
+                                    BookshelfEmptyState(customGroup = page > 0)
                                 }
-                                entry.lastReadAt?.let {
-                                    Text(
-                                        text = entry.progressSummary(),
-                                        style = MiuixTheme.textStyles.footnote2,
-                                        color = MiuixTheme.colorScheme.primary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.padding(top = 5.dp, start = 2.dp, end = 2.dp),
-                                    )
+                            } else {
+                                val gridState = rememberLazyGridState()
+                                BindTopBarGlassScroll(gridState, active = pagerState.currentPage == page)
+                                LazyVerticalGrid(
+                                    columns = GridCells.Fixed(3),
+                                    state = gridState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(start = 10.dp, top = topInset + 10.dp, end = 10.dp, bottom = 28.dp + innerPadding.calculateBottomPadding()),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                                ) {
+                                    items(pageEntries, key = BookshelfEntry::albumId) { entry ->
+                                        val album = entry.toHomeAlbum()
+                                        Column {
+                                            Box {
+                                                AlbumItem(
+                                                    album = album,
+                                                    coverLifted = album.id == liftedAlbumId,
+                                                    onSelected = { selected, bounds ->
+                                                        if (selectionMode) {
+                                                            selectedIds = if (selected.id in selectedIds) {
+                                                                selectedIds - selected.id
+                                                            } else {
+                                                                selectedIds + selected.id
+                                                            }
+                                                        } else {
+                                                            onAlbumSelected(selected, bounds)
+                                                        }
+                                                    },
+                                                    onLongSelected = {
+                                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                        selectionMode = true
+                                                        selectedIds = selectedIds + entry.albumId
+                                                    },
+                                                    // 多选态下不画更新角标：那时封面上已经压了一层选中遮罩。
+                                                    updateChapters = if (selectionMode) {
+                                                        0
+                                                    } else {
+                                                        updateRecords[entry.albumId]?.pendingChapters ?: 0
+                                                    },
+                                                    selected = (entry.albumId in selectedIds).takeIf { selectionMode },
+                                                    selectionOverlay = {
+                                                        if (selectionMode) AlbumSelectionOverlay(
+                                                            selected = entry.albumId in selectedIds,
+                                                            modifier = Modifier.matchParentSize(),
+                                                        )
+                                                    },
+                                                )
+                                            }
+                                            entry.lastReadAt?.let {
+                                                Text(
+                                                    text = entry.progressSummary(),
+                                                    style = MiuixTheme.textStyles.footnote2,
+                                                    color = MiuixTheme.colorScheme.primary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.padding(top = 4.dp, start = 6.dp, end = 6.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                    item(key = BOOKSHELF_FOOTER, span = { GridItemSpan(maxLineSpan) }) {
+                                        Text(
+                                            text = "共 ${pageEntries.size} 部漫画",
+                                            style = MiuixTheme.textStyles.footnote1,
+                                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 18.dp),
+                                            textAlign = TextAlign.Center,
+                                        )
+                                    }
                                 }
                             }
                         }
-                        item(key = BOOKSHELF_FOOTER, span = { GridItemSpan(maxLineSpan) }) {
-                            Text(
-                                text = "共 ${pageEntries.size} 部漫画",
-                                style = MiuixTheme.textStyles.footnote1,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 18.dp),
-                                textAlign = TextAlign.Center,
-                            )
-                        }
                     }
                 }
-                }
             }
+
         }
     }
 
@@ -1424,8 +1448,8 @@ private fun ManualBookshelfPickerDialog(
                         tint = MiuixTheme.colorScheme.primary,
                     )
                 }
-                }
             }
+        }
         if (searchExpanded) {
             TextField(
                 value = query,

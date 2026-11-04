@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -30,10 +31,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.jmx.client.core.result.JmxResult
 import dev.jmx.client.effect.FloatingNavBarStyle
 import dev.jmx.client.effect.TopBarBlurStyle
-import dev.jmx.client.core.result.JmxResult
-import java.util.Locale
+import dev.jmx.client.effect.liquid.BindTopBarGlassScroll
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -44,15 +45,16 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Check
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
-import top.yukonga.miuix.kmp.blur.LayerBackdrop
-import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
+import java.util.Locale
 
 @Composable
 internal fun SettingsScreen(
@@ -95,7 +97,10 @@ internal fun SettingsScreen(
         cacheSize = runCatching { repository.imageCacheSizeBytes() }.getOrNull()
     }
 
+    val topBarListState = rememberLazyListState()
+    BindTopBarGlassScroll(topBarListState)
     LazyColumn(
+        state = topBarListState,
         modifier = Modifier
             .fillMaxSize()
             .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
@@ -154,7 +159,7 @@ internal fun SettingsScreen(
                     )
                     SwitchPreference(
                         title = "悬浮底栏",
-                        summary = "底部导航切换为悬浮样式，可选择默认磨砂或 iOS 液态玻璃，需要设备支持",
+                        summary = "底部导航使用悬浮样式，可选择 MIUIX 磨砂或 Matter 液态玻璃",
                         checked = liquidGlassNavBar,
                         onCheckedChange = { enabled ->
                             repository.setLiquidGlassNavBarEnabled(enabled)

@@ -1,5 +1,6 @@
 package dev.jmx.client
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -51,20 +52,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import androidx.activity.compose.BackHandler
 import dev.jmx.client.effect.BlurredBar
 import dev.jmx.client.effect.TopBarBlurStyle
+import dev.jmx.client.effect.liquid.BindTopBarGlassScroll
 import dev.jmx.client.effect.rememberBarBackdrop
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
@@ -77,10 +76,12 @@ import top.yukonga.miuix.kmp.icon.basic.Search
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Lock
 import top.yukonga.miuix.kmp.icon.extended.Sort
-import top.yukonga.miuix.kmp.menu.WindowIconCascadingDropdownMenu
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 import kotlin.math.roundToInt
+import dev.jmx.client.effect.liquid.GlassTopBarDropdownMenu as WindowIconCascadingDropdownMenu
+import dev.jmx.client.effect.liquid.GlassTopBarIcon as Icon
+import dev.jmx.client.effect.liquid.GlassTopBarIconButton as IconButton
 
 /**
  * 分组序列：一行一个分组，从上到下就是书架顶部 tab 栏从左到右的顺序。
@@ -107,6 +108,7 @@ internal fun BookshelfGroupOrderScreen(
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
     val listState = rememberLazyListState()
+    BindTopBarGlassScroll(listState)
 
     val initialGroups = remember(repository) { repository.groups() }
     var counts by remember(repository) { mutableStateOf(emptyMap<String, Int>()) }

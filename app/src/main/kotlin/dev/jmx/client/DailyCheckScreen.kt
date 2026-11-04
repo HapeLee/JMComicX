@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import dev.jmx.client.core.api.DailyCheckInfo
 import dev.jmx.client.core.result.JmxError
 import dev.jmx.client.core.result.JmxResult
+import dev.jmx.client.effect.liquid.BindTopBarGlassScroll
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -100,7 +102,10 @@ internal fun DailyCheckScreen(
                 val streak = remember(current.info) { currentDailyStreak(current.info) }
                 val cycleProgress = dailyRewardCycleProgress(streak)
                 val todaySigned = month.cells.any { it.today && it.signed }
+                val listState = rememberLazyListState()
+                BindTopBarGlassScroll(listState)
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
                         start = 18.dp,

@@ -3,8 +3,8 @@ package dev.jmx.client
 import android.content.Context
 import android.text.Html
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -69,6 +70,7 @@ import dev.jmx.client.core.protocol.JmxProtocolConstants
 import dev.jmx.client.core.result.JmxResult
 import dev.jmx.client.core.runtime.InitStepResult
 import dev.jmx.client.core.runtime.JmxCore
+import dev.jmx.client.effect.liquid.BindTopBarGlassScroll
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -94,8 +96,6 @@ import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Image
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.PagerGestureNestedScrollConnection
-import top.yukonga.miuix.kmp.utils.pagerGestureOverride
 
 @Composable
 internal fun HomeScreen(
@@ -110,6 +110,8 @@ internal fun HomeScreen(
     onRefresh: () -> Unit,
     onRetry: () -> Unit,
     pagerEnabled: Boolean = true,
+    favoriteAlbumIds: Set<String> = emptySet(),
+    bookshelfAlbumIds: Set<String> = emptySet(),
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         when (state) {
@@ -126,6 +128,8 @@ internal fun HomeScreen(
                 backdrop = backdrop,
                 topInset = innerPadding.calculateTopPadding(),
                 bottomInset = innerPadding.calculateBottomPadding(),
+                favoriteAlbumIds = favoriteAlbumIds,
+                bookshelfAlbumIds = bookshelfAlbumIds,
             )
             is HomeUiState.Empty -> EmptyState(
                 title = "暂无推荐",
@@ -154,20 +158,18 @@ private fun HomeContent(
     backdrop: LayerBackdrop?,
     topInset: Dp,
     bottomInset: Dp,
+    favoriteAlbumIds: Set<String>,
+    bookshelfAlbumIds: Set<String>,
 ) {
-    // 分页状态由调用方（JmxApp）持有：顶栏标签行与这里的 HorizontalPager 共用同一个
-    // PagerState，标签的选中态与指示器位置直接来自分页器的实时进度。此前是"顶栏索引"与
-    // "分页状态"两份状态互相回写，且回写用的是 settledPage（惯性停稳后才更新），
-    // 手动滑动时顶栏要等分页彻底停下才跟上，观感上就是切换慢、有间隔、割裂。
+    // 与悬浮分类菜单共用 PagerState。按 Legado 的同向嵌套结构，内层使用官方默认连接，
+    // 速度返还适配集中挂在 JmxApp 的外层主 Pager，不在两层重复安装。
     Box(modifier = Modifier.fillMaxSize()) {
         HorizontalPager(
             state = pagerState,
             modifier = Modifier
                 .fillMaxSize()
-                .pagerGestureOverride(pagerState, enabled = pagerEnabled)
                 .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
-            userScrollEnabled = false,
-            pageNestedScrollConnection = PagerGestureNestedScrollConnection,
+            userScrollEnabled = pagerEnabled,
             key = { categories[it].id },
         ) { page ->
             val pullToRefreshState = rememberPullToRefreshState()
@@ -180,11 +182,14 @@ private fun HomeContent(
             ) {
                 HomeAlbumGrid(
                     category = categories[page],
+                    activePage = pagerState.currentPage == page,
                     onLoadMore = onLoadMore,
                     onAlbumSelected = onAlbumSelected,
                     liftedAlbumId = liftedAlbumId,
                     topInset = topInset,
                     bottomInset = bottomInset,
+                    favoriteAlbumIds = favoriteAlbumIds,
+                    bookshelfAlbumIds = bookshelfAlbumIds,
                 )
             }
         }
@@ -193,14 +198,18 @@ private fun HomeContent(
 
 @Composable
 private fun HomeAlbumGrid(
+    activePage: Boolean,
     category: HomeCategory,
     onLoadMore: (String) -> Unit,
     onAlbumSelected: (HomeAlbum, Rect) -> Unit,
     liftedAlbumId: String?,
     topInset: Dp,
     bottomInset: Dp,
+    favoriteAlbumIds: Set<String>,
+    bookshelfAlbumIds: Set<String>,
 ) {
     val gridState = rememberLazyGridState()
+    BindTopBarGlassScroll(gridState, active = activePage)
     val footerKey = remember(category.id) { "home-footer:${category.id}" }
     val footerVisible by remember(gridState, footerKey) {
         derivedStateOf {
@@ -216,9 +225,9 @@ private fun HomeAlbumGrid(
             .semantics {
                 contentDescription = "${category.title}漫画列表，共${category.albums.size}部"
             },
-        contentPadding = PaddingValues(start = 12.dp, top = topInset + 12.dp, end = 12.dp, bottom = 28.dp + bottomInset),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        contentPadding = PaddingValues(start = 10.dp, top = topInset + 10.dp, end = 10.dp, bottom = 28.dp + bottomInset),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         items(
             items = category.albums,
@@ -228,6 +237,8 @@ private fun HomeAlbumGrid(
                 album = album,
                 coverLifted = album.id == liftedAlbumId,
                 onSelected = onAlbumSelected,
+                isFavorite = album.id in favoriteAlbumIds,
+                inBookshelf = album.id in bookshelfAlbumIds,
             )
         }
         item(key = footerKey, span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
@@ -296,6 +307,8 @@ internal fun AlbumItem(
     updateChapters: Int = 0,
     selected: Boolean? = null,
     enabled: Boolean = true,
+    isFavorite: Boolean = false,
+    inBookshelf: Boolean = false,
     selectionOverlay: @Composable BoxScope.() -> Unit = {},
 ) {
     var coverBounds by remember(album.id) { mutableStateOf(Rect.Zero) }
@@ -305,7 +318,11 @@ internal fun AlbumItem(
         }
     }
     val content: @Composable () -> Unit = {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+        ) {
             Box(modifier = Modifier.fillMaxWidth()) {
                 AlbumCover(
                     album = album,
@@ -324,8 +341,15 @@ internal fun AlbumItem(
                     )
                 }
                 if (!coverLifted) selectionOverlay()
+                if (!coverLifted && (isFavorite || inBookshelf)) {
+                    AlbumMembershipBadges(
+                        isFavorite = isFavorite,
+                        inBookshelf = inBookshelf,
+                        modifier = Modifier.align(Alignment.BottomStart).padding(6.dp),
+                    )
+                }
             }
-            Spacer(modifier = Modifier.height(9.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = album.name,
                 style = MiuixTheme.textStyles.footnote1,
@@ -334,14 +358,16 @@ internal fun AlbumItem(
                 overflow = TextOverflow.Ellipsis,
                 maxLines = 2,
                 minLines = 2,
+                modifier = Modifier.padding(horizontal = 2.dp),
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(3.dp))
             Text(
                 text = album.author,
                 style = MiuixTheme.textStyles.footnote2,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 overflow = TextOverflow.Ellipsis,
                 maxLines = 1,
+                modifier = Modifier.padding(horizontal = 2.dp),
             )
         }
     }
@@ -356,7 +382,7 @@ internal fun AlbumItem(
             onClick = select,
             enabled = enabled,
             modifier = itemModifier,
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(12.dp),
             color = Color.Transparent,
             content = content,
         )
@@ -370,9 +396,35 @@ internal fun AlbumItem(
                     onClickLabel = if (selected != null) { if (selected) "取消选择漫画" else "选择漫画" } else null,
                     onLongClickLabel = "选择漫画",
                 ),
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(12.dp),
             color = Color.Transparent,
             content = content,
+        )
+    }
+}
+
+@Composable
+private fun AlbumMembershipBadges(
+    isFavorite: Boolean,
+    inBookshelf: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (isFavorite) AlbumMembershipBadge("已收藏", Color(0xFF704300), Color(0xFFFFE0A3))
+        if (inBookshelf) AlbumMembershipBadge("在书架", MiuixTheme.colorScheme.primary, MiuixTheme.colorScheme.onPrimary)
+    }
+}
+
+@Composable
+private fun AlbumMembershipBadge(text: String, background: Color, foreground: Color) {
+    Surface(shape = RoundedCornerShape(5.dp), color = background) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+            style = MiuixTheme.textStyles.footnote2,
+            fontWeight = FontWeight.SemiBold,
+            color = foreground,
+            maxLines = 1,
         )
     }
 }
@@ -409,30 +461,36 @@ private fun AlbumCover(
                     retryAttempt++
                 } else Modifier,
             )
-        } else if (visible) {
+        } else {
             AsyncImage(
                 model = coverRequest,
                 contentDescription = album.name,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        alpha = if (visible && !loadFailed) 1f else 0f
+                    },
                 contentScale = ContentScale.Crop,
                 onSuccess = {
                     retryScheduled = false
                     loadFailed = false
                 },
                 onError = {
-                    if (retryAttempt < COVER_UI_RETRY_COUNT && !retryScheduled) {
-                        retryScheduled = true
-                        coroutineScope.launch {
-                            delay(COVER_UI_RETRY_BASE_DELAY_MILLIS * (retryAttempt + 1L))
-                            retryAttempt++
-                            retryScheduled = false
+                    if (visible && !loadFailed) {
+                        if (retryAttempt < COVER_UI_RETRY_COUNT && !retryScheduled) {
+                            retryScheduled = true
+                            coroutineScope.launch {
+                                delay(COVER_UI_RETRY_BASE_DELAY_MILLIS * (retryAttempt + 1L))
+                                retryAttempt++
+                                retryScheduled = false
+                            }
+                        } else if (!retryScheduled) {
+                            loadFailed = true
                         }
-                    } else if (!retryScheduled) {
-                        loadFailed = true
                     }
                 },
             )
-            if (retryScheduled) CircularProgressIndicator(size = 22.dp, strokeWidth = 3.dp)
+            if (visible && retryScheduled) CircularProgressIndicator(size = 22.dp, strokeWidth = 3.dp)
         }
     }
 }
@@ -463,27 +521,27 @@ private fun AlbumUpdateChapterBadge(chapters: Int, modifier: Modifier = Modifier
 
 @Composable
 private fun FailedCover(modifier: Modifier = Modifier) {    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Icon(
-            imageVector = MiuixIcons.Image,
-            contentDescription = null,
-            modifier = Modifier.size(30.dp),
-            tint = MiuixTheme.colorScheme.onSurfaceContainerVariant,
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "封面未加载成功",
-            style = MiuixTheme.textStyles.footnote2,
-            color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-        )
-    }
+    modifier = modifier
+        .fillMaxSize()
+        .padding(horizontal = 8.dp),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.Center,
+) {
+    Icon(
+        imageVector = MiuixIcons.Image,
+        contentDescription = null,
+        modifier = Modifier.size(30.dp),
+        tint = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+        text = "封面未加载成功",
+        style = MiuixTheme.textStyles.footnote2,
+        color = MiuixTheme.colorScheme.onSurfaceContainerVariant,
+        textAlign = TextAlign.Center,
+        maxLines = 2,
+    )
+}
 }
 
 @Composable
@@ -698,9 +756,8 @@ internal class HomeRepository(
                 albums.map { album ->
                     async {
                         semaphore.withPermit {
-                            val request = ImageRequest.Builder(applicationContext)
-                                .data(album.coverUrl)
-                                .httpHeaders(albumCoverHeaders)
+                            val request = buildCoverRequest(applicationContext, album.coverUrl)
+                                .newBuilder()
                                 .size(COVER_PRELOAD_WIDTH_PX, COVER_PRELOAD_HEIGHT_PX)
                                 .precision(Precision.INEXACT)
                                 .build()
@@ -755,11 +812,28 @@ internal fun AlbumSummary.toHomeAlbum(imageHost: String): HomeAlbum {
     )
 }
 
-internal fun buildCoverRequest(context: Context, url: String): ImageRequest {
+internal fun coverMemoryCacheKey(url: String): String? =
+    url.trim().takeIf { it.isNotEmpty() }?.let { "album-cover:$it" }
+
+internal fun buildCoverRequest(
+    context: Context,
+    url: String,
+    memoryKey: String? = null,
+): ImageRequest {
+    val key = memoryKey ?: coverMemoryCacheKey(url)
     return ImageRequest.Builder(context)
         .data(url)
         .httpHeaders(albumCoverHeaders)
         .crossfade(false)
+        .apply {
+            if (key != null) {
+                memoryCacheKey(key)
+                placeholderMemoryCacheKey(key)
+            }
+            if (url.isNotBlank()) {
+                diskCacheKey(url)
+            }
+        }
         .build()
 }
 

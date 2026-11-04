@@ -2,11 +2,13 @@ package dev.jmx.client
 
 import android.content.Context
 import androidx.core.content.edit
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.Locale
 import java.util.UUID
 import kotlin.math.pow
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * 书架排序字段。[defaultDirection] 是该字段在「正序」下的自然顺序：
@@ -119,6 +121,9 @@ internal class BookshelfRepository(
         Context.MODE_PRIVATE,
     )
     private val lock = Any()
+    private val _albumIds = MutableStateFlow(readEntries().mapTo(hashSetOf()) { it.albumId }.toSet())
+    /** 所有增删、自动收录与导入共用 writeEntries，封面可直接订阅成员变化。 */
+    val albumIds = _albumIds.asStateFlow()
 
     fun entries(
         groupId: String = ALL_BOOKSHELF_GROUP_ID,
@@ -413,9 +418,11 @@ internal class BookshelfRepository(
     }
 
     private fun writeEntries(entries: List<BookshelfEntry>) {
+        val storedEntries = entries.take(MAX_BOOKSHELF_ENTRIES)
         val array = JSONArray()
-        entries.take(MAX_BOOKSHELF_ENTRIES).forEach { array.put(it.toJson()) }
+        storedEntries.forEach { array.put(it.toJson()) }
         preferences.edit { putString(BOOKSHELF_ENTRIES_KEY, array.toString()) }
+        _albumIds.value = storedEntries.mapTo(hashSetOf()) { it.albumId }.toSet()
     }
 
     private fun readGroups(): List<BookshelfGroup> {

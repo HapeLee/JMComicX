@@ -46,6 +46,14 @@ internal class AppSettingsRepository(
         .build()
 
     init {
+        // 样式升级只应用一次；之后继续尊重用户在设置中选择的底栏样式。
+        if (!preferences.getBoolean(MATTER_GLASS_APPLIED_KEY, false)) {
+            preferences.edit {
+                putBoolean(LIQUID_GLASS_NAV_BAR_KEY, true)
+                putString(FLOATING_NAV_BAR_STYLE_KEY, FloatingNavBarStyle.IOS_LIKE.name)
+                putBoolean(MATTER_GLASS_APPLIED_KEY, true)
+            }
+        }
         if (!preferences.getBoolean(API_SELECTION_CONFIGURED_KEY, false)) {
             core.endpointManager.useAutoSelection()
         }
@@ -77,8 +85,8 @@ internal class AppSettingsRepository(
         preferences.edit { putString(TOP_BAR_BLUR_STYLE_KEY, style.name) }
     }
 
-    /** 底栏悬浮样式开关，默认关闭（关闭时使用普通贴底导航栏） */
-    fun liquidGlassNavBarEnabled(): Boolean = preferences.getBoolean(LIQUID_GLASS_NAV_BAR_KEY, false)
+    /** 默认使用 Matter 悬浮玻璃，仍可切回普通贴底导航栏。 */
+    fun liquidGlassNavBarEnabled(): Boolean = preferences.getBoolean(LIQUID_GLASS_NAV_BAR_KEY, true)
 
     fun setLiquidGlassNavBarEnabled(enabled: Boolean) {
         preferences.edit { putBoolean(LIQUID_GLASS_NAV_BAR_KEY, enabled) }
@@ -214,6 +222,7 @@ private const val AUTO_CHECK_IN_DATE_KEY = "auto_check_in_date"
 private const val API_SELECTION_CONFIGURED_KEY = "api_selection_configured"
 private const val TOP_BAR_BLUR_STYLE_KEY = "top_bar_blur_style"
 private const val LIQUID_GLASS_NAV_BAR_KEY = "liquid_glass_nav_bar"
+private const val MATTER_GLASS_APPLIED_KEY = "matter_glass_style_applied"
 private const val FLOATING_NAV_BAR_STYLE_KEY = "floating_nav_bar_style"
 private const val FAVORITE_SORT_ORDER_KEY = "favorite_sort_order"
 private const val FAVORITE_SORT_DIRECTION_KEY = "favorite_sort_direction"

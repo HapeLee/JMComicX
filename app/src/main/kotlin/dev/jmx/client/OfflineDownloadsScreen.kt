@@ -9,8 +9,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,7 +27,9 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -48,11 +48,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.jmx.client.effect.BlurredBar
 import dev.jmx.client.effect.TopBarBlurStyle
+import dev.jmx.client.effect.liquid.BindTopBarGlassScroll
+import dev.jmx.client.effect.liquid.GlassTopBarActions
 import dev.jmx.client.effect.rememberBarBackdrop
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.ProgressIndicatorDefaults
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -67,11 +67,13 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Download
-import top.yukonga.miuix.kmp.icon.extended.Share
 import top.yukonga.miuix.kmp.icon.extended.SelectAll
+import top.yukonga.miuix.kmp.icon.extended.Share
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 import kotlin.math.roundToInt
+import dev.jmx.client.effect.liquid.GlassTopBarIcon as Icon
+import dev.jmx.client.effect.liquid.GlassTopBarIconButton as IconButton
 
 /** The route supplies only explicit/manual downloads, never the reader's temporary cache. */
 internal data class OfflineDownloadsUiState(
@@ -121,6 +123,7 @@ internal fun OfflineDownloadsScreen(
     val failedIds = remember(items) { offlineRetryIds(items) }
     var failuresOnly by rememberSaveable { mutableStateOf(false) }
     val visibleItems = if (failuresOnly) items.filter { it.id in failedIds } else items
+    BindTopBarGlassScroll(gridState, active = visibleItems.isNotEmpty())
     val availableIds = visibleItems.mapTo(linkedSetOf(), OfflineDownloadUiModel::id)
     var selectionMode by rememberSaveable { mutableStateOf(false) }
     // ArrayList is Bundle-saveable, unlike an arbitrary Set implementation.
@@ -181,53 +184,56 @@ internal fun OfflineDownloadsScreen(
                             }
                         },
                         actions = {
-                            if (selecting) {
-                                IconButton(
-                                    onClick = { savedSelection = ArrayList(toggleAllDownloadSelection(selectedIds, availableIds)) },
-                                    enabled = availableIds.isNotEmpty() && !state.busy,
-                                    minWidth = 42.dp,
-                                    minHeight = 42.dp,
-                                ) {
-                                    Icon(
-                                        imageVector = MiuixIcons.SelectAll,
-                                        contentDescription = if (selectedIds.containsAll(availableIds)) "取消全选" else "全选当前列表",
-                                        tint = MiuixTheme.colorScheme.onBackground,
-                                    )
+                            GlassTopBarActions {
+                                if (selecting) {
+                                    IconButton(
+                                        onClick = { savedSelection = ArrayList(toggleAllDownloadSelection(selectedIds, availableIds)) },
+                                        enabled = availableIds.isNotEmpty() && !state.busy,
+                                        minWidth = 42.dp,
+                                        minHeight = 42.dp,
+                                    ) {
+                                        Icon(
+                                            imageVector = MiuixIcons.SelectAll,
+                                            contentDescription = if (selectedIds.containsAll(availableIds)) "取消全选" else "全选当前列表",
+                                            tint = MiuixTheme.colorScheme.onBackground,
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { onExport(selectedIds.toSet()) },
+                                        enabled = canExportSelection && !state.busy,
+                                        minWidth = 42.dp,
+                                        minHeight = 42.dp,
+                                    ) {
+                                        Icon(MiuixIcons.Share, contentDescription = "导出已选漫画", tint = MiuixTheme.colorScheme.primary)
+                                    }
+                                    IconButton(
+                                        onClick = { pendingDeletion = selectedIds.toSet() },
+                                        enabled = selectedIds.isNotEmpty() && !state.busy,
+                                        holdDownState = pendingDeletion.isNotEmpty(),
+                                        minWidth = 42.dp,
+                                        minHeight = 42.dp,
+                                    ) {
+                                        Icon(MiuixIcons.Delete, contentDescription = "删除已选漫画", tint = MiuixTheme.colorScheme.error)
+                                    }
+                                    IconButton(
+                                        onClick = ::cancelSelection,
+                                        enabled = !state.busy,
+                                        minWidth = 42.dp,
+                                        minHeight = 42.dp,
+                                    ) {
+                                        Icon(MiuixIcons.Close, contentDescription = "退出多选", tint = MiuixTheme.colorScheme.onBackground)
+                                    }
+                                } else {
+                                    IconButton(
+                                        onClick = { selectionMode = true },
+                                        enabled = visibleItems.isNotEmpty() && !state.busy,
+                                        minWidth = 42.dp,
+                                        minHeight = 42.dp,
+                                    ) {
+                                        Icon(MiuixIcons.SelectAll, contentDescription = "选择漫画", tint = MiuixTheme.colorScheme.onBackground)
+                                    }
                                 }
-                                IconButton(
-                                    onClick = { onExport(selectedIds.toSet()) },
-                                    enabled = canExportSelection && !state.busy,
-                                    minWidth = 42.dp,
-                                    minHeight = 42.dp,
-                                ) {
-                                    Icon(MiuixIcons.Share, contentDescription = "导出已选漫画", tint = MiuixTheme.colorScheme.primary)
-                                }
-                                IconButton(
-                                    onClick = { pendingDeletion = selectedIds.toSet() },
-                                    enabled = selectedIds.isNotEmpty() && !state.busy,
-                                    holdDownState = pendingDeletion.isNotEmpty(),
-                                    minWidth = 42.dp,
-                                    minHeight = 42.dp,
-                                ) {
-                                    Icon(MiuixIcons.Delete, contentDescription = "删除已选漫画", tint = MiuixTheme.colorScheme.error)
-                                }
-                                IconButton(
-                                    onClick = ::cancelSelection,
-                                    enabled = !state.busy,
-                                    minWidth = 42.dp,
-                                    minHeight = 42.dp,
-                                ) {
-                                    Icon(MiuixIcons.Close, contentDescription = "退出多选", tint = MiuixTheme.colorScheme.onBackground)
-                                }
-                            } else {
-                                IconButton(
-                                    onClick = { selectionMode = true },
-                                    enabled = visibleItems.isNotEmpty() && !state.busy,
-                                    minWidth = 42.dp,
-                                    minHeight = 42.dp,
-                                ) {
-                                    Icon(MiuixIcons.SelectAll, contentDescription = "选择漫画", tint = MiuixTheme.colorScheme.onBackground)
-                                }
+
                             }
                         },
                     )

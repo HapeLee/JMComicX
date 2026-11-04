@@ -13,6 +13,7 @@
         android:roundIcon="@drawable/jmx_logo"
         android:usesCleartextTraffic="true"
         android:supportsRtl="true"
+        android:enableOnBackInvokedCallback="true"
         android:theme="@style/JmxTheme.Starting">
         <service
             android:name=".OfflineDownloadService"
@@ -20,7 +21,8 @@
             android:foregroundServiceType="dataSync" />
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:enableOnBackInvokedCallback="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

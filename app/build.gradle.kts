@@ -8,13 +8,20 @@ plugins {
 val versionProperties = Properties().apply {
     rootProject.file("version.properties").inputStream().use { load(it) }
 }
-val releaseKeystoreFile = providers.environmentVariable("JMX_RELEASE_KEYSTORE_FILE")
+val releaseKeystoreFile = providers.gradleProperty("RELEASE_STORE_FILE")
+    .orElse(providers.environmentVariable("JMX_RELEASE_KEYSTORE_FILE"))
     .orElse("signing/jmx-release.keystore")
     .get()
     .let(::file)
-val releaseStorePassword = providers.environmentVariable("JMX_RELEASE_STORE_PASSWORD").orNull
-val releaseKeyAlias = providers.environmentVariable("JMX_RELEASE_KEY_ALIAS").orNull
-val releaseKeyPassword = providers.environmentVariable("JMX_RELEASE_KEY_PASSWORD").orNull
+val releaseStorePassword = providers.gradleProperty("RELEASE_STORE_PASSWORD")
+    .orElse(providers.environmentVariable("JMX_RELEASE_STORE_PASSWORD"))
+    .orNull
+val releaseKeyAlias = providers.gradleProperty("RELEASE_KEY_ALIAS")
+    .orElse(providers.environmentVariable("JMX_RELEASE_KEY_ALIAS"))
+    .orNull
+val releaseKeyPassword = providers.gradleProperty("RELEASE_KEY_PASSWORD")
+    .orElse(providers.environmentVariable("JMX_RELEASE_KEY_PASSWORD"))
+    .orNull
 val releaseSigningReady = releaseKeystoreFile.isFile &&
     !releaseStorePassword.isNullOrBlank() &&
     !releaseKeyAlias.isNullOrBlank() &&
@@ -63,6 +70,10 @@ android {
             buildConfigField("boolean", "COMIC_UPDATE_HINTS", "false")
         }
         getByName("debug") {
+            applicationIdSuffix = ".debug"
+            if (releaseSigningReady) {
+                signingConfig = signingConfigs.findByName("jmxRelease")
+            }
             buildConfigField("boolean", "COMIC_UPDATE_HINTS", "true")
         }
     }
@@ -90,6 +101,8 @@ tasks.configureEach {
 
 dependencies {
     implementation(project(":core"))
+    implementation(libs.backdrop)
+    implementation(libs.shapes)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.navigationevent.compose)

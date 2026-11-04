@@ -76,30 +76,30 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.IntSize
+import androidx.core.content.edit
+import androidx.core.graphics.createBitmap
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.core.content.edit
-import androidx.core.graphics.createBitmap
 import coil3.ImageLoader
 import coil3.asImage
 import coil3.compose.AsyncImage
@@ -127,6 +127,11 @@ import dev.jmx.client.core.image.ImagePlan
 import dev.jmx.client.core.protocol.JmxProtocolConstants
 import dev.jmx.client.core.result.JmxResult
 import dev.jmx.client.core.runtime.JmxCore
+import dev.jmx.client.effect.liquid.BindTopBarGlassScroll
+import dev.jmx.client.effect.liquid.GlassTopBarHost
+import dev.jmx.client.effect.liquid.LiquidGlassIconButton
+import dev.jmx.client.effect.liquid.rememberTopBarGlassProgress
+import dev.jmx.client.effect.rememberBarBackdrop
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -138,15 +143,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import kotlin.math.abs
-import kotlin.math.min
-import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
-import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.ProgressIndicatorDefaults
@@ -155,6 +153,8 @@ import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.ChevronForward
@@ -167,6 +167,13 @@ import top.yukonga.miuix.kmp.icon.extended.VolumeUp
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.min
+import kotlin.math.roundToInt
+import dev.jmx.client.effect.liquid.GlassTopBarIcon as Icon
 
 internal data class ReaderLaunchRequest(
     val album: HomeAlbum,
@@ -580,134 +587,146 @@ private fun ComicReaderContent(
     )
     BackHandler(onBack = ::closeReader)
 
-    Scaffold(modifier = Modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MiuixTheme.colorScheme.surface),
-        ) {
-            when (val state = chapterState) {
-                ReaderChapterState.Loading -> ReaderLoading(chapterName = selectedChapter.displayName(selectedChapterIndex))
-                is ReaderChapterState.Error -> ReaderError(
-                    message = state.message,
-                    onRetry = { chapterRetryKey++ },
-                    onBack = ::closeReader,
-                )
-                is ReaderChapterState.Content -> ReaderPages(
-                    pages = state.pages,
-                    geometry = geometry,
-                    viewportWidthPx = viewportWidthPx,
-                    listState = listState,
-                    failedPages = failedPages,
-                    retryKeys = pageRetryKeys,
-                    continuousFlipEnabled = settings.continuousChapterFlip,
-                    flipHint = flipHint,
-                    canFlipForward = flipForwardTarget != null,
-                    canFlipBackward = flipBackwardTarget != null,
-                    onFlipForward = {
-                        nextChapterIndex?.let { selectChapter(it, ReaderChapterLanding.INITIAL) }
-                    },
-                    onFlipBackward = {
-                        previousChapterIndex?.let { selectChapter(it, ReaderChapterLanding.LAST) }
-                    },
-                    onPageFailed = { index, message -> failedPages[index] = message },
-                    onPageLoaded = { index, width, height ->
-                        failedPages.remove(index)
-                        geometry.record(index, width, height)
-                        prefetch.markSucceeded(index)
-                    },
-                    onRetryPage = { index ->
-                        failedPages.remove(index)
-                        pageRetryKeys[index] = (pageRetryKeys[index] ?: 0) + 1
-                    },
-                    onToggleControls = { controlsVisible = !controlsVisible },
-                )
-            }
-
-            if (!controlsVisible) {
-                ImmersiveStatus(
-                    showBatteryTime = settings.showBatteryTime,
-                    showPageNumber = settings.showPageNumber,
-                    currentPage = currentPageIndex + 1,
-                    totalPages = pages.size,
-                )
-            }
-
-            AnimatedVisibility(
-                visible = controlsVisible,
-                enter = fadeIn() + slideInVertically { -it },
-                exit = fadeOut() + slideOutVertically { -it },
-                modifier = Modifier.align(Alignment.TopCenter),
+    val readerBarBackdrop = rememberBarBackdrop()
+    GlassTopBarHost {
+        BindTopBarGlassScroll(listState)
+        Scaffold(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MiuixTheme.colorScheme.surface),
             ) {
-                ReaderTopBar(
-                    chapter = selectedChapter,
-                    chapterIndex = selectedChapterIndex,
-                    chapterCount = chapters.size,
+                Box(
+                    Modifier.fillMaxSize().then(
+                        if (readerBarBackdrop != null) Modifier.layerBackdrop(readerBarBackdrop) else Modifier,
+                    ),
+                ) {
+                    when (val state = chapterState) {
+                        ReaderChapterState.Loading -> ReaderLoading(chapterName = selectedChapter.displayName(selectedChapterIndex))
+                        is ReaderChapterState.Error -> ReaderError(
+                            message = state.message,
+                            onRetry = { chapterRetryKey++ },
+                            onBack = ::closeReader,
+                        )
+                        is ReaderChapterState.Content -> ReaderPages(
+                            pages = state.pages,
+                            geometry = geometry,
+                            viewportWidthPx = viewportWidthPx,
+                            listState = listState,
+                            failedPages = failedPages,
+                            retryKeys = pageRetryKeys,
+                            continuousFlipEnabled = settings.continuousChapterFlip,
+                            flipHint = flipHint,
+                            canFlipForward = flipForwardTarget != null,
+                            canFlipBackward = flipBackwardTarget != null,
+                            onFlipForward = {
+                                nextChapterIndex?.let { selectChapter(it, ReaderChapterLanding.INITIAL) }
+                            },
+                            onFlipBackward = {
+                                previousChapterIndex?.let { selectChapter(it, ReaderChapterLanding.LAST) }
+                            },
+                            onPageFailed = { index, message -> failedPages[index] = message },
+                            onPageLoaded = { index, width, height ->
+                                failedPages.remove(index)
+                                geometry.record(index, width, height)
+                                prefetch.markSucceeded(index)
+                            },
+                            onRetryPage = { index ->
+                                failedPages.remove(index)
+                                pageRetryKeys[index] = (pageRetryKeys[index] ?: 0) + 1
+                            },
+                            onToggleControls = { controlsVisible = !controlsVisible },
+                        )
+                    }
+
+                }
+                if (!controlsVisible) {
+                    ImmersiveStatus(
+                        showBatteryTime = settings.showBatteryTime,
+                        showPageNumber = settings.showPageNumber,
+                        currentPage = currentPageIndex + 1,
+                        totalPages = pages.size,
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = controlsVisible,
+                    enter = fadeIn() + slideInVertically { -it },
+                    exit = fadeOut() + slideOutVertically { -it },
+                    modifier = Modifier.align(Alignment.TopCenter),
+                ) {
+                    ReaderTopBar(
+                        backdrop = readerBarBackdrop,
+                        chapter = selectedChapter,
+                        chapterIndex = selectedChapterIndex,
+                        chapterCount = chapters.size,
+                        source = source,
+                        onBack = ::closeReader,
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = controlsVisible,
+                    enter = fadeIn() + slideInVertically { it },
+                    exit = fadeOut() + slideOutVertically { it },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                ) {
+                    ReaderControlPanel(
+                        currentPageIndex = currentPageIndex,
+                        totalPages = pages.size,
+                        sliderDraft = sliderDraft,
+                        onSliderChange = {
+                            // 进度条属于独立操作：一旦开始拖动，就清空章末换章草稿，
+                            // 避免之前在章尾累计的状态在松开进度条时误提交换章。
+                            flipHint.resetAfterRelease()
+                            sliderDraft = it
+                        },
+                        onSliderFinished = {
+                            flipHint.resetAfterRelease()
+                            // 顺序要紧：scrollToPage 会同步把 currentPageIndex 推到目标页，
+                            // 之后清空草稿才不会让进度条露出一帧旧页码。
+                            scrollToPage(readerPageFromSlider(sliderDraft ?: currentPageIndex.toFloat(), pages.size))
+                            sliderDraft = null
+                        },
+                        canPreviousChapter = previousChapterIndex != null,
+                        canNextChapter = nextChapterIndex != null,
+                        failedPage = failedPages.keys.minOrNull(),
+                        onPreviousChapter = { previousChapterIndex?.let { selectChapter(it) } },
+                        onNextChapter = { nextChapterIndex?.let { selectChapter(it) } },
+                        onShowCatalog = { showCatalog = true },
+                        onShowSettings = { showSettings = true },
+                    )
+                }
+
+                // 顶栏/底栏之后才画：换章提示是当下这一下手势的反馈，被任何常驻控件盖住都是错的。
+                ReaderChapterFlipCard(
+                    visible = flipCard != null,
+                    model = lastFlipCard,
                     source = source,
-                    onBack = ::closeReader,
+                    modifier = Modifier.align(
+                        // 退场动画期间读的是快照，方向也得跟着快照，否则卡片会在淡出时换边。
+                        if (lastFlipCard?.forward != false) Alignment.BottomCenter else Alignment.TopCenter,
+                    ),
+                )
+
+                ReaderCatalogSheet(
+                    show = showCatalog,
+                    chapters = chapters,
+                    selectedChapterIndex = selectedChapterIndex,
+                    availableChapterIds = if (offline != null) availableChapterIds else null,
+                    onSelect = { selectChapter(it) },
+                    onDismiss = { showCatalog = false },
+                )
+                ReaderSettingsSheet(
+                    show = showSettings,
+                    settings = settings,
+                    onSettingsChange = ::updateSettings,
+                    onDismiss = { showSettings = false },
                 )
             }
-
-            AnimatedVisibility(
-                visible = controlsVisible,
-                enter = fadeIn() + slideInVertically { it },
-                exit = fadeOut() + slideOutVertically { it },
-                modifier = Modifier.align(Alignment.BottomCenter),
-            ) {
-                ReaderControlPanel(
-                    currentPageIndex = currentPageIndex,
-                    totalPages = pages.size,
-                    sliderDraft = sliderDraft,
-                    onSliderChange = {
-                        // 进度条属于独立操作：一旦开始拖动，就清空章末换章草稿，
-                        // 避免之前在章尾累计的状态在松开进度条时误提交换章。
-                        flipHint.resetAfterRelease()
-                        sliderDraft = it
-                    },
-                    onSliderFinished = {
-                        flipHint.resetAfterRelease()
-                        // 顺序要紧：scrollToPage 会同步把 currentPageIndex 推到目标页，
-                        // 之后清空草稿才不会让进度条露出一帧旧页码。
-                        scrollToPage(readerPageFromSlider(sliderDraft ?: currentPageIndex.toFloat(), pages.size))
-                        sliderDraft = null
-                    },
-                    canPreviousChapter = previousChapterIndex != null,
-                    canNextChapter = nextChapterIndex != null,
-                    failedPage = failedPages.keys.minOrNull(),
-                    onPreviousChapter = { previousChapterIndex?.let { selectChapter(it) } },
-                    onNextChapter = { nextChapterIndex?.let { selectChapter(it) } },
-                    onShowCatalog = { showCatalog = true },
-                    onShowSettings = { showSettings = true },
-                )
-            }
-
-            // 顶栏/底栏之后才画：换章提示是当下这一下手势的反馈，被任何常驻控件盖住都是错的。
-            ReaderChapterFlipCard(
-                visible = flipCard != null,
-                model = lastFlipCard,
-                source = source,
-                modifier = Modifier.align(
-                    // 退场动画期间读的是快照，方向也得跟着快照，否则卡片会在淡出时换边。
-                    if (lastFlipCard?.forward != false) Alignment.BottomCenter else Alignment.TopCenter,
-                ),
-            )
-
-            ReaderCatalogSheet(
-                show = showCatalog,
-                chapters = chapters,
-                selectedChapterIndex = selectedChapterIndex,
-                availableChapterIds = if (offline != null) availableChapterIds else null,
-                onSelect = { selectChapter(it) },
-                onDismiss = { showCatalog = false },
-            )
-            ReaderSettingsSheet(
-                show = showSettings,
-                settings = settings,
-                onSettingsChange = ::updateSettings,
-                onDismiss = { showSettings = false },
-            )
         }
     }
+
 }
 
 @Composable
@@ -1358,6 +1377,7 @@ private fun ReaderTopBar(
     chapterCount: Int,
     source: ReaderResourceSource,
     onBack: () -> Unit,
+    backdrop: LayerBackdrop?,
 ) {
     Surface(color = MiuixTheme.colorScheme.background) {
         Row(
@@ -1366,7 +1386,7 @@ private fun ReaderTopBar(
                 .padding(start = 8.dp, top = 36.dp, end = 16.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) {
+            LiquidGlassIconButton(onClick = onBack, backdrop = backdrop, glassAlpha = rememberTopBarGlassProgress().value) {
                 Icon(
                     imageVector = MiuixIcons.Back,
                     contentDescription = "返回详情",

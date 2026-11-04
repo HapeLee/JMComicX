@@ -1,14 +1,19 @@
 .gradle/
 .kotlin/
+.idea/
 build/
 **/build/
+app/release/
 local.properties
+# 本机 Gradle daemon 的 JDK 选择；项目编译目标在构建脚本中统一声明。
+gradle/gradle-daemon-jvm.properties
 local-credentials.properties
 **/local-credentials.properties
 docs/
 *.md
 !README.md
 !CHANGELOG.md
+!AGENTS.md
 app/signing/
 *.jks
 *.keystore

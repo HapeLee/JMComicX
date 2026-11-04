@@ -1,7 +1,6 @@
 package dev.jmx.client
 
 import android.app.Activity
-import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -20,18 +19,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
+import dev.jmx.client.effect.liquid.BindTopBarGlassScroll
+import dev.jmx.client.effect.liquid.rememberTopBarGlassProgress
+import dev.jmx.client.effect.rememberBarBackdrop
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
@@ -43,7 +43,9 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import dev.jmx.client.effect.rememberBarBackdrop
+import android.graphics.Color as AndroidColor
+import dev.jmx.client.effect.liquid.GlassTopBarIcon as Icon
+import dev.jmx.client.effect.liquid.LiquidGlassIconButton as IconButton
 
 internal data class ThirdPartyLibrary(
     val name: String,
@@ -92,6 +94,7 @@ internal fun AboutScreen(
         }
     }
     val listState = rememberLazyListState()
+    BindTopBarGlassScroll(listState)
     val density = LocalDensity.current
     var heroHeight by remember { mutableStateOf(170.dp) }
     val scrollProgress by remember {
@@ -132,7 +135,7 @@ internal fun AboutScreen(
                     alpha = ((scrollProgress - 0.35f) / 0.65f).coerceIn(0f, 1f),
                 ),
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = onBack, backdrop = backdrop, glassAlpha = rememberTopBarGlassProgress().value) {
                         Icon(
                             imageVector = MiuixIcons.Back,
                             contentDescription = "返回",
@@ -256,7 +259,10 @@ internal fun ThirdPartyListScreen(
     innerPadding: PaddingValues,
 ) {
     val uriHandler = LocalUriHandler.current
+    val listState = rememberLazyListState()
+    BindTopBarGlassScroll(listState)
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .background(MiuixTheme.colorScheme.surface),

@@ -14,9 +14,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -25,7 +28,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -49,20 +51,20 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.jmx.client.core.api.FavoriteFolder
 import dev.jmx.client.core.result.JmxResult
-import dev.jmx.client.effect.BlurTabRow
 import dev.jmx.client.effect.BlurredBar
 import dev.jmx.client.effect.TopBarBlurStyle
+import dev.jmx.client.effect.liquid.BindTopBarGlassScroll
+import dev.jmx.client.effect.liquid.FloatingCategoryMenu
+import dev.jmx.client.effect.liquid.GlassTopBarActions
+import dev.jmx.client.effect.rememberPagerFlingPassThroughConnection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
-import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBarDefaults
@@ -74,11 +76,11 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.SelectAll
 import top.yukonga.miuix.kmp.icon.extended.Sort
-import top.yukonga.miuix.kmp.menu.WindowIconCascadingDropdownMenu
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.PagerGestureNestedScrollConnection
-import top.yukonga.miuix.kmp.utils.pagerGestureOverride
 import top.yukonga.miuix.kmp.utils.springAnimateToPage
+import dev.jmx.client.effect.liquid.GlassTopBarDropdownMenu as WindowIconCascadingDropdownMenu
+import dev.jmx.client.effect.liquid.GlassTopBarIcon as Icon
+import dev.jmx.client.effect.liquid.GlassTopBarIconButton as IconButton
 
 /** Selection is scoped to the active folder's loaded pages, never the whole server collection. */
 @Stable
@@ -174,7 +176,6 @@ internal fun FavoriteSelectionAction(selection: FavoriteCollectionSelection, sel
         }
     }
 }
-
 
 @Composable
 internal fun AccountCollectionScreen(
@@ -324,20 +325,29 @@ internal fun AccountCollectionScreen(
     val pagerEnabled = favorites && !activeSelection.selecting && !activeSelection.busy &&
         !activeSelection.showFolderPicker && !activeSelection.sortMenuExpanded && !restoringFolderPage
     val collectionContent: @Composable (PaddingValues) -> Unit = { pagePadding ->
+        val navigationInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        val menuBottom = navigationInset + 12.dp
         Box(
             modifier = Modifier.fillMaxSize()
                 .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
                 .background(MiuixTheme.colorScheme.surface),
         ) {
+            val childPagerNestedScrollConnection = rememberPagerFlingPassThroughConnection(
+                state = pagerState,
+            )
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize().pagerGestureOverride(pagerState, enabled = pagerEnabled),
-                userScrollEnabled = false,
-                pageNestedScrollConnection = PagerGestureNestedScrollConnection,
+                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = pagerEnabled,
+                pageNestedScrollConnection = childPagerNestedScrollConnection,
                 key = { index -> if (index == 0) "all" else folders[index - 1].id },
             ) { page ->
                 CollectionFolderPage(
-                    innerPadding = pagePadding,
+                    innerPadding = PaddingValues(
+                        top = pagePadding.calculateTopPadding(),
+                        bottom = if (favorites) maxOf(pagePadding.calculateBottomPadding(), menuBottom + 72.dp)
+                        else pagePadding.calculateBottomPadding(),
+                    ),
                     kind = kind,
                     folderId = if (favorites) folders.getOrNull(page - 1)?.id?.toIntOrNull() ?: 0 else 0,
                     repository = repository,
@@ -368,86 +378,75 @@ internal fun AccountCollectionScreen(
     if (favorites) {
         // SmallTopAppBar owns the status-bar inset; Scaffold measures the complete header.
         // Neither the parent route padding nor an independently measured overlay is added.
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            containerColor = Color.Transparent,
-            topBar = {
-                BlurredBar(backdrop = backdrop, style = topBarBlurStyle) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth()
-                            .then(if (backdrop == null) Modifier.background(MiuixTheme.colorScheme.surface) else Modifier),
-                    ) {
-                        AnimatedContent(
-                            targetState = activeSelection.selecting,
-                            transitionSpec = {
-                                (fadeIn(tween(220)) + slideInVertically { it / 3 }) togetherWith
-                                    (fadeOut(tween(140)) + slideOutVertically { -it / 4 })
-                            },
-                            label = "FavoriteTopBarMode",
-                        ) { multiSelect ->
-                            SmallTopAppBar(
-                                title = if (multiSelect) "已选择 ${activeSelection.selectedIds.size} 部" else title ?: "我的收藏",
-                                titlePadding = if (multiSelect) 8.dp else TopAppBarDefaults.TitlePadding,
-                                color = Color.Transparent,
-                                navigationIcon = {
-                                    if (!multiSelect && onBack != null) {
-                                        IconButton(onClick = onBack) {
-                                            Icon(
-                                                imageVector = MiuixIcons.Back,
-                                                contentDescription = "返回",
-                                                tint = MiuixTheme.colorScheme.onBackground,
-                                            )
+        Box(Modifier.fillMaxSize()) {
+            Scaffold(
+                modifier = Modifier.fillMaxSize(),
+                containerColor = Color.Transparent,
+                topBar = {
+                    BlurredBar(backdrop = backdrop, style = topBarBlurStyle) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth()
+                                .then(if (backdrop == null) Modifier.background(MiuixTheme.colorScheme.surface) else Modifier),
+                        ) {
+                            AnimatedContent(
+                                targetState = activeSelection.selecting,
+                                transitionSpec = {
+                                    (fadeIn(tween(220)) + slideInVertically { it / 3 }) togetherWith
+                                        (fadeOut(tween(140)) + slideOutVertically { -it / 4 })
+                                },
+                                label = "FavoriteTopBarMode",
+                            ) { multiSelect ->
+                                SmallTopAppBar(
+                                    title = if (multiSelect) "已选择 ${activeSelection.selectedIds.size} 部" else title ?: "我的收藏",
+                                    titlePadding = if (multiSelect) 8.dp else TopAppBarDefaults.TitlePadding,
+                                    color = Color.Transparent,
+                                    navigationIcon = {
+                                        if (!multiSelect && onBack != null) {
+                                            IconButton(onClick = onBack) {
+                                                Icon(
+                                                    imageVector = MiuixIcons.Back,
+                                                    contentDescription = "返回",
+                                                    tint = MiuixTheme.colorScheme.onBackground,
+                                                )
+                                            }
                                         }
-                                    }
-                                },
-                                actions = {
-                                    FavoriteSelectionAction(activeSelection, selecting = multiSelect)
-                                    if (!multiSelect) topBarActions()
-                                },
-                                bottomContent = {
-                                    if (!multiSelect) {
-                                        CollectionFolderTabs(
-                                            tabs = tabs,
-                                            pagerState = pagerState,
-                                            enabled = pagerEnabled,
-                                            scope = scope,
-                                        )
-                                    }
-                                },
-                            )
-                        }
-                        if (folderError != null) {
-                            Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = "资料夹读取失败", modifier = Modifier.weight(1f), style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.error)
-                                TextButton(text = "重试", onClick = { foldersRetry++ }, enabled = !foldersLoading && !activeSelection.busy)
+                                    },
+                                    actions = {
+                                        GlassTopBarActions {
+                                            FavoriteSelectionAction(activeSelection, selecting = multiSelect)
+                                            if (!multiSelect) topBarActions()
+
+                                        }
+                                    },
+                                )
+                            }
+                            if (folderError != null) {
+                                Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(text = "资料夹读取失败", modifier = Modifier.weight(1f), style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.error)
+                                    TextButton(text = "重试", onClick = { foldersRetry++ }, enabled = !foldersLoading && !activeSelection.busy)
+                                }
+                            }
+                            activeSelection.message?.let { message ->
+                                Text(text = message, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.primary)
                             }
                         }
-                        activeSelection.message?.let { message ->
-                            Text(text = message, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.primary)
-                        }
                     }
-                }
-            },
-            content = collectionContent,
-        )
+                },
+                content = collectionContent,
+            )
+            FloatingCategoryMenu(
+                items = tabs,
+                selectedIndex = pagerState.currentPage,
+                onSelect = { index -> scope.launch { pagerState.springAnimateToPage(index) } },
+                backdrop = backdrop,
+                description = "收藏资料夹",
+                visible = pagerEnabled && liftedAlbumId == null,
+                closeKey = sessionRevision to folders.map { it.id },
+            )
+        }
     } else {
         collectionContent(innerPadding)
     }
-}
-
-@Composable
-private fun CollectionFolderTabs(
-    tabs: List<String>,
-    pagerState: androidx.compose.foundation.pager.PagerState,
-    enabled: Boolean,
-    scope: kotlinx.coroutines.CoroutineScope,
-) {
-    BlurTabRow(
-        tabs = tabs,
-        selectedIndex = pagerState.currentPage.coerceIn(tabs.indices),
-        onTabSelected = { index -> if (enabled) scope.launch { pagerState.springAnimateToPage(index) } },
-        selectionProgress = { pagerState.currentPage + pagerState.currentPageOffsetFraction },
-    )
 }
 
 @Composable
@@ -544,6 +543,7 @@ private fun CollectionFolderPage(
             )
         } else AccountCollectionGrid(
             innerPadding = innerPadding,
+            activePage = activePage,
             state = current,
             liftedAlbumId = liftedAlbumId,
             onAlbumSelected = onAlbumSelected,
@@ -584,6 +584,7 @@ internal fun FavoriteSortAction(
 @Composable
 private fun AccountCollectionGrid(
     innerPadding: PaddingValues,
+    activePage: Boolean,
     state: AccountCollectionState.Content,
     liftedAlbumId: String?,
     onAlbumSelected: (HomeAlbum, Rect) -> Unit,
@@ -592,6 +593,7 @@ private fun AccountCollectionGrid(
     selection: FavoriteCollectionSelection?,
 ) {
     val gridState = rememberLazyGridState()
+    BindTopBarGlassScroll(gridState, active = activePage)
     val haptics = LocalHapticFeedback.current
     val footerVisible by remember(gridState) { derivedStateOf { gridState.layoutInfo.visibleItemsInfo.any { it.key == ACCOUNT_COLLECTION_FOOTER } } }
     // Load each logical page at most once automatically. A still-visible footer after append
@@ -603,41 +605,31 @@ private fun AccountCollectionGrid(
         columns = GridCells.Fixed(3),
         state = gridState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 12.dp, top = innerPadding.calculateTopPadding() + 12.dp, end = 12.dp, bottom = innerPadding.calculateBottomPadding() + 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        contentPadding = PaddingValues(start = 10.dp, top = innerPadding.calculateTopPadding() + 10.dp, end = 10.dp, bottom = innerPadding.calculateBottomPadding() + 24.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         items(state.albums, key = { it.id }) { album ->
             val selected = selection?.selectedIds?.contains(album.id) == true
-            val albumContent: @Composable () -> Unit = {
-                AlbumItem(
-                    album = album,
-                    coverLifted = album.id == liftedAlbumId,
-                    onSelected = { chosen, bounds ->
-                        if (selection?.selecting == true) selection.toggle(chosen.id) else onAlbumSelected(chosen, bounds)
-                    },
-                    onLongSelected = selection?.let { holder -> {
-                        if (!holder.busy) {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            holder.begin(album.id)
-                        }
-                    } },
-                    updateChapters = if (selection?.selecting == true) 0 else updateChaptersOf(album.id),
-                    selected = selected.takeIf { selection?.selecting == true },
-                    enabled = selection?.busy != true && selection?.showFolderPicker != true,
-                    selectionOverlay = {
-                        if (selection?.selecting == true) AlbumSelectionOverlay(selected, Modifier.matchParentSize())
-                    },
-                )
-            }
-            if (selection == null) {
-                // Keep the history card's existing normal-mode geometry unchanged.
-                Surface(shape = RoundedCornerShape(10.dp), color = Color.Transparent) {
-                    Box(modifier = Modifier.padding(3.dp)) { albumContent() }
-                }
-            } else {
-                albumContent()
-            }
+            AlbumItem(
+                album = album,
+                coverLifted = album.id == liftedAlbumId,
+                onSelected = { chosen, bounds ->
+                    if (selection?.selecting == true) selection.toggle(chosen.id) else onAlbumSelected(chosen, bounds)
+                },
+                onLongSelected = selection?.let { holder -> {
+                    if (!holder.busy) {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        holder.begin(album.id)
+                    }
+                } },
+                updateChapters = if (selection?.selecting == true) 0 else updateChaptersOf(album.id),
+                selected = selected.takeIf { selection?.selecting == true },
+                enabled = selection?.busy != true && selection?.showFolderPicker != true,
+                selectionOverlay = {
+                    if (selection?.selecting == true) AlbumSelectionOverlay(selected, Modifier.matchParentSize())
+                },
+            )
         }
         item(key = ACCOUNT_COLLECTION_FOOTER, span = { GridItemSpan(maxLineSpan) }) {
             Box(modifier = Modifier.fillMaxWidth().height(68.dp), contentAlignment = Alignment.Center) {

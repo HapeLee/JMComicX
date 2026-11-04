@@ -16,6 +16,9 @@ opencc4j = "1.14.0"
 webp-imageio = "0.9.0"
 
 [libraries]
+# 与 Matter 使用同一版光学渲染器和连续曲率形状，避免同参数在不同 shader 上产生不同效果。
+backdrop = { group = "io.github.kyant0", name = "backdrop", version = "2.0.1" }
+shapes = { group = "io.github.kyant0", name = "shapes", version = "1.2.1" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activity-compose" }
 androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "core-splashscreen" }
 androidx-navigationevent-compose = { group = "androidx.navigationevent", name = "navigationevent-compose-android", version.ref = "androidx-navigationevent" }

@@ -168,7 +168,7 @@ internal class AppUpdateManager(
             val version = tag.normalizeVersion().takeIf(String::isNotBlank) ?: return@withContext null
             val assetsResponse = client.newCall(
                 Request.Builder()
-                    .url("$GITHUB_REPOSITORY_URL/releases/expanded_assets/$tag")
+                    .url("$PROJECT_URL/releases/expanded_assets/$tag")
                     .header("User-Agent", userAgent())
                     .build(),
             ).execute()
@@ -282,21 +282,18 @@ private fun String.normalizeVersionParts(): List<Int> = normalizeVersion()
     .split('.')
     .map { part -> part.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }
 
-private fun releaseUrl(tag: String): String = "$GITHUB_REPOSITORY_URL/releases/tag/$tag"
+private fun releaseUrl(tag: String): String = "$PROJECT_URL/releases/tag/$tag"
 
 private const val UPDATE_PREFERENCES = "jmx-update-preferences"
 private const val UPDATE_LOG_TAG = "JMComicX.Update"
 private const val AUTO_CHECK_KEY = "auto_check_enabled"
-private const val GITHUB_REPOSITORY_URL = "https://github.com/Sakura-TWT/JMComicX"
-private const val GITHUB_LATEST_RELEASE_URL = "$GITHUB_REPOSITORY_URL/releases/latest"
+private const val GITHUB_LATEST_RELEASE_URL = "$PROJECT_URL/releases/latest"
+private const val GITHUB_RELEASE_API_URL = "https://api.github.com/repos/$PROJECT_REPOSITORY/releases/latest"
 private const val DEFAULT_UPDATE_BODY = "GitHub 已发布新版本，建议更新以获得最新功能和稳定性修复。"
 private val APK_LINK_PATTERN = Regex("""href=[\"']([^\"']+/releases/download/[^\"']+\.apk(?:\?[^\"']*)?)[\"']""", RegexOption.IGNORE_CASE)
-private val RELEASE_API_ENDPOINTS = listOf(
-    "https://api.github.com/repos/Sakura-TWT/JMComicX/releases/latest",
-    "https://gh.llkk.cc/https://api.github.com/repos/Sakura-TWT/JMComicX/releases/latest",
-    "https://ghproxy.net/https://api.github.com/repos/Sakura-TWT/JMComicX/releases/latest",
-)
 private val DOWNLOAD_PROXY_PREFIXES = listOf(
     "https://gh.llkk.cc/",
     "https://ghproxy.net/",
 )
+private val RELEASE_API_ENDPOINTS = listOf(GITHUB_RELEASE_API_URL) +
+    DOWNLOAD_PROXY_PREFIXES.map { prefix -> "$prefix$GITHUB_RELEASE_API_URL" }

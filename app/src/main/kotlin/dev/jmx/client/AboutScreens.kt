@@ -286,7 +286,6 @@ internal fun ThirdPartyListScreen(
 }
 
 private const val ABOUT_HERO_SPACER_KEY = "about-hero-spacer"
-private const val PROJECT_URL = "https://github.com/Sakura-TWT/JMComicX"
 private const val PROJECT_LICENSE_URL = "https://www.gnu.org/licenses/gpl-3.0.html"
 private val ABOUT_LOGO_TOP_OFFSET = 92.dp
 private val ABOUT_CONTENT_BOTTOM_GAP = 126.dp

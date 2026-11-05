@@ -48,6 +48,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.activity.compose.LocalActivity
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStoreOwner
 import dev.jmx.client.core.result.JmxResult
 import dev.jmx.client.core.result.toUserMessage
 import dev.jmx.client.effect.BlurredBar
@@ -239,7 +242,9 @@ internal fun JmxApp(
     }
     var pendingLoadMoreCategoryId by remember { mutableStateOf<String?>(null) }
     var detailRequest by remember { mutableStateOf<AlbumDetailTransitionRequest?>(null) }
-    var readerRequest by remember { mutableStateOf<ReaderLaunchRequest?>(null) }
+    val readerOwner = LocalActivity.current as ViewModelStoreOwner
+    val readerSession = remember(readerOwner) { ViewModelProvider(readerOwner)[ReaderSession::class.java] }
+    var readerRequest by readerSession.request
     var bookshelfRevision by remember { mutableIntStateOf(0) }
     val coverBookshelfAlbumIds by bookshelfRepository.albumIds.collectAsState()
     // 从分组序列页点了某个分组：书架重建后由它把分页落到那一格，消费完立刻清空。

@@ -1,0 +1,107 @@
+package dev.jmx.client
+
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.InputDevice
+import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.os.Bundle
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import java.io.File
+import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+class ReaderModesSmokeActivity : ComponentActivity() {
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (ReaderVolumeKeyDispatcher.shouldConsume(keyCode)) {
+            if (event.repeatCount == 0) ReaderVolumeKeyDispatcher.dispatch(keyCode)
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (ReaderVolumeKeyDispatcher.shouldConsume(keyCode)) return true
+        return super.onKeyUp(keyCode, event)
+    }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getStringExtra("gesture") == "pinch") {
+            val downTime = SystemClock.uptimeMillis()
+            val handler = Handler(Looper.getMainLooper())
+            fun send(delay: Long, action: Int, count: Int, left: Float, right: Float) {
+                handler.postDelayed({
+                    val properties = Array(count) { id -> MotionEvent.PointerProperties().apply { this.id = id; toolType = MotionEvent.TOOL_TYPE_FINGER } }
+                    val coordinates = Array(count) { id -> MotionEvent.PointerCoords().apply { x = if (id == 0) left else right; y = 640f; pressure = 1f; size = .05f } }
+                    val event = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action, count, properties, coordinates,
+                        0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0)
+                    window.decorView.dispatchTouchEvent(event)
+                    event.recycle()
+                }, delay)
+            }
+            send(0L, MotionEvent.ACTION_DOWN, 1, 300f, 420f)
+            send(30L, MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2, 300f, 420f)
+            for (step in 1..16) send(30L + step * 25L, MotionEvent.ACTION_MOVE, 2, 300f - 120f * step / 16f, 420f + 120f * step / 16f)
+            send(460L, MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2, 180f, 540f)
+            send(490L, MotionEvent.ACTION_UP, 1, 180f, 540f)
+        }
+    }
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        getSharedPreferences("reader_settings", MODE_PRIVATE).edit()
+            .putString("reader_mode", intent.getStringExtra("mode") ?: "LEFT_TO_RIGHT")
+            .putBoolean("seamless_chapters", intent.getBooleanExtra("seamless", true))
+            .putString("double_page_mode", intent.getStringExtra("double") ?: "AUTO")
+            .putBoolean("cover_single", intent.getBooleanExtra("cover", true))
+            .putBoolean("auto_page_background", intent.getBooleanExtra("background", true))
+            .putBoolean("volume_key_paging", true).commit()
+        val count = intent.getIntExtra("pages", 3)
+        val spreadFixture = intent.getBooleanExtra("spreads", false)
+        val wide = intent.getIntExtra("wide", -1)
+        val root = File(cacheDir, "reader-mode-fixture-$count-$spreadFixture-$wide").apply { mkdirs() }
+        val missing = intent.getIntExtra("missing", -1)
+        val chapters = (0..4).map { chapter ->
+            val pages = (0 until count).map { page ->
+                val file = File(root, "chapter-$chapter-page-$page.png")
+                if (!file.exists()) {
+                    val height = if (page == wide) 500 else if (page == 1 && !spreadFixture) 1800 else 1100
+                    val bitmap = Bitmap.createBitmap(800, height, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(bitmap)
+                    canvas.drawColor(if (chapter % 2 == 0) 0xffdfeff7.toInt() else 0xfff8e8d4.toInt())
+                    if (spreadFixture) {
+                        val background = Paint().apply { color = if (page % 2 == 0) 0xff17324a.toInt() else 0xff663344.toInt() }
+                        canvas.drawRect(0f, height * .7f, 800f, height.toFloat(), background)
+                    }
+                    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xff17324a.toInt(); textSize = 52f }
+                    for (y in 150 until height step 350) canvas.drawText("CH ${chapter + 1}  PAGE ${page + 1}", 100f, y.toFloat(), paint)
+                    file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    bitmap.recycle()
+                }
+                ReaderOfflinePage(page, if (chapter == missing) "absent-$chapter-$page.png" else file.name, file.length())
+            }
+            ReaderOfflineChapter("smoke-$chapter", "Chapter ${chapter + 1}", "$chapter", count, pages)
+        }
+        val manifest = ReaderOfflineManifest("mode-smoke", root, chapters)
+        val album = HomeAlbum("mode-smoke", "Reader mode smoke", "Fixture", "", "")
+        val request = readerOfflineLaunchRequest(album, manifest,
+            "smoke-${intent.getIntExtra("chapter", 1)}", intent.getIntExtra("page", 1))
+        val repository = ComicReaderRepository(this, createAppJmxCore(this))
+        setContent {
+            MiuixTheme {
+                Scaffold {
+                    ComicReaderScreen(request, repository,
+                        onProgress = { Log.i("ReaderModeSmoke", "${it.chapterId}:${it.pageIndex}/${it.pageCount}") },
+                        onBack = { finish() })
+                }
+            }
+        }
+    }
+}

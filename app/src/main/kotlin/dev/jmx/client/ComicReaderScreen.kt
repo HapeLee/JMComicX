@@ -33,6 +33,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -50,11 +52,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.VerticalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -75,7 +84,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
@@ -89,10 +101,16 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
@@ -101,6 +119,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import coil3.ImageLoader
+import coil3.BitmapImage
+import coil3.Image
 import coil3.asImage
 import coil3.compose.AsyncImage
 import coil3.decode.DecodeResult
@@ -111,6 +131,7 @@ import coil3.imageLoader
 import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
 import coil3.request.ImageRequest
+import coil3.request.CachePolicy
 import coil3.request.Options
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
@@ -127,52 +148,48 @@ import dev.jmx.client.core.image.ImagePlan
 import dev.jmx.client.core.protocol.JmxProtocolConstants
 import dev.jmx.client.core.result.JmxResult
 import dev.jmx.client.core.runtime.JmxCore
-import dev.jmx.client.effect.liquid.BindTopBarGlassScroll
-import dev.jmx.client.effect.liquid.GlassTopBarHost
-import dev.jmx.client.effect.liquid.LiquidGlassIconButton
-import dev.jmx.client.effect.liquid.rememberTopBarGlassProgress
 import dev.jmx.client.effect.rememberBarBackdrop
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.abs
+import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.ProgressIndicatorDefaults
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.ChevronForward
+import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
-import top.yukonga.miuix.kmp.icon.extended.ListView
 import top.yukonga.miuix.kmp.icon.extended.Refresh
-import top.yukonga.miuix.kmp.icon.extended.Settings
-import top.yukonga.miuix.kmp.icon.extended.VolumeUp
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import kotlin.math.abs
-import kotlin.math.min
-import kotlin.math.roundToInt
 import dev.jmx.client.effect.liquid.GlassTopBarIcon as Icon
 
 internal data class ReaderLaunchRequest(
@@ -251,286 +268,342 @@ private fun ComicReaderContent(
             is ReaderResourceSource.Offline -> source.manifest.chapters.map { it.toReaderChapter() }
         }
     }
-    var offlineInspection by remember(source) { mutableStateOf<ReaderOfflineInspection?>(null) }
-    val availableChapterIds = offlineInspection?.availableChapterIds.orEmpty()
-    val initialChapterIndex = remember(request.initialChapterId, chapters) {
-        chapters.indexOfFirst { it.id == request.initialChapterId }.takeIf { it >= 0 } ?: 0
-    }
-    var selectedChapterIndex by rememberSaveable(request.album.id) {
-        mutableIntStateOf(initialChapterIndex)
-    }
-    var initialProgressConsumed by rememberSaveable(request.album.id) { mutableStateOf(false) }
-    selectedChapterIndex = selectedChapterIndex.coerceIn(chapters.indices)
-    val selectedChapter = chapters[selectedChapterIndex]
-    val previousChapterIndex = when (source) {
-        ReaderResourceSource.OnlineJm -> (selectedChapterIndex - 1).takeIf { it in chapters.indices }
-        is ReaderResourceSource.Offline -> readerOfflineAdjacentChapterIndex(
-            source.manifest.chapters, availableChapterIds, selectedChapterIndex, -1,
-        )
-    }
-    val nextChapterIndex = when (source) {
-        ReaderResourceSource.OnlineJm -> (selectedChapterIndex + 1).takeIf { it in chapters.indices }
-        is ReaderResourceSource.Offline -> readerOfflineAdjacentChapterIndex(
-            source.manifest.chapters, availableChapterIds, selectedChapterIndex, 1,
-        )
-    }
-    val initialPageForChapter = if (
-        !initialProgressConsumed && selectedChapter.id == request.initialChapterId
-    ) {
-        request.initialPageIndex.coerceAtLeast(0)
-    } else {
-        0
-    }
-    var chapterState by remember(request.album.id, selectedChapter.id) {
-        mutableStateOf<ReaderChapterState>(ReaderChapterState.Loading)
-    }
-    var chapterRetryKey by remember(request.album.id) { mutableIntStateOf(0) }
+    val initialChapterIndex = chapters.indexOfFirst { it.id == request.initialChapterId }.coerceAtLeast(0)
+    var selectedChapterIndex by rememberSaveable(request.album.id) { mutableIntStateOf(initialChapterIndex) }
+    var currentPageIndex by rememberSaveable(request.album.id) { mutableIntStateOf(request.initialPageIndex.coerceAtLeast(0)) }
     var controlsVisible by rememberSaveable(request.album.id) { mutableStateOf(true) }
     var showCatalog by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
-    var currentPageIndex by remember(request.album.id) {
-        mutableIntStateOf(request.initialPageIndex.coerceAtLeast(0))
-    }
     var sliderDraft by remember { mutableStateOf<Float?>(null) }
-    val failedPages = remember(selectedChapter.id) { mutableStateMapOf<Int, String>() }
-    val pageRetryKeys = remember(selectedChapter.id) { mutableStateMapOf<Int, Int>() }
-    val listState = key(selectedChapter.id) {
-        rememberLazyListState(initialFirstVisibleItemIndex = initialPageForChapter)
-    }
+    var navigationVersion by remember { mutableIntStateOf(0) }
+    var chapterLanding by remember { mutableStateOf(ReaderChapterLanding.INITIAL) }
+    var stripAddress by remember { mutableStateOf<ReaderPageAddress?>(null) }
+    var stripFraction by remember { mutableFloatStateOf(0f) }
+    selectedChapterIndex = selectedChapterIndex.coerceIn(chapters.indices)
+    val selectedChapter = chapters[selectedChapterIndex]
     val coroutineScope = rememberCoroutineScope()
     val settingsStore = remember(context) { ReaderSettingsStore(context) }
     var settings by remember { mutableStateOf(settingsStore.load()) }
-
-    // 解码与占位都按视口宽算。取屏幕宽而不是量出来的列表宽：阅览页的列表本就铺满宽度，
-    // 而量出来的值第一帧是 0，会让首屏那几页用 0 宽去建请求键，白白多一次解码。
-    val viewportWidthPx = remember(context) { readerViewportWidthPx(context) }
+    var offlineInspection by remember(source) { mutableStateOf<ReaderOfflineInspection?>(null) }
+    val availableChapterIds = offlineInspection?.availableChapterIds.orEmpty()
+    val chapterStates = remember(source) { mutableStateMapOf<Int, ReaderChapterState>() }
+    val loadingJobs = remember(source) { mutableMapOf<Int, Job>() }
+    val failedPages = remember(source) { mutableStateMapOf<String, String>() }
+    val pageRetryKeys = remember(source) { mutableStateMapOf<String, Int>() }
+    val edgeColors = remember(source) { mutableStateMapOf<String, ReaderEdgeColors>() }
+    val viewportDp = LocalWindowInfo.current.containerDpSize
+    val viewportWidthPx = with(LocalDensity.current) { viewportDp.width.roundToPx() }.coerceAtLeast(1)
     val geometryStore = remember(context) { ReaderPageGeometryStore(context) }
-    val geometry = remember(selectedChapter.id) {
-        ReaderPageGeometryState(geometryStore.load(selectedChapter.id))
-    }
-    val prefetch = remember(context, coroutineScope) {
-        ReaderPrefetchController(context, context.imageLoader, coroutineScope)
-    }
-    // 翻页速度（页/秒）的指数滑动平均，决定预取窗口开多大。
-    var pageVelocity by remember(selectedChapter.id) { mutableFloatStateOf(0f) }
-    var scrollingForward by remember(selectedChapter.id) { mutableStateOf(true) }
-    var chapterLanding by remember(request.album.id) { mutableStateOf(ReaderChapterLanding.INITIAL) }
-    // 相邻话的页数（章末预热时顺手记下）。换章提示卡要写"全 N 页"，没预热到就只写话名。
-    var neighborPageCounts by remember(request.album.id) { mutableStateOf(emptyMap<String, Int>()) }
-
-    DisposableEffect(selectedChapter.id, geometry) {
-        onDispose {
-            if (geometry.dirty) {
-                geometryStore.save(selectedChapter.id, geometry.snapshot())
-                geometry.markSaved()
-            }
-        }
-    }
-    // 边读边落盘：只靠 onDispose 的话，被系统杀掉的那次测量结果就白测了，
-    // 下次进同一话又要从灰块跳一遍。
-    LaunchedEffect(selectedChapter.id, geometry) {
-        while (true) {
-            delay(READER_GEOMETRY_FLUSH_INTERVAL_MILLIS)
-            if (!geometry.dirty) continue
-            geometryStore.save(selectedChapter.id, geometry.snapshot())
+    val geometries = remember(source) { mutableMapOf<String, ReaderPageGeometryState>() }
+    fun geometryFor(chapterId: String): ReaderPageGeometryState =
+        geometries.getOrPut(chapterId) { ReaderPageGeometryState(geometryStore.load(chapterId)) }
+    fun saveGeometry(chapterId: String, geometry: ReaderPageGeometryState) {
+        if (geometry.dirty) {
+            geometryStore.save(chapterId, geometry.snapshot())
             geometry.markSaved()
         }
     }
-    DisposableEffect(prefetch) {
-        onDispose { prefetch.clear() }
+    DisposableEffect(source) {
+        onDispose { geometries.forEach { (id, geometry) -> saveGeometry(id, geometry) } }
     }
-
+    LaunchedEffect(source) {
+        if (offline != null) offlineInspection = withContext(Dispatchers.IO) {
+            inspectReaderOfflineManifest(offline.manifest, request.album.id)
+        }
+    }
+    LaunchedEffect(geometryStore, source) {
+        while (true) {
+            delay(READER_GEOMETRY_FLUSH_INTERVAL_MILLIS)
+            geometries.forEach { (id, geometry) -> saveGeometry(id, geometry) }
+        }
+    }
+    fun ensureChapter(index: Int, force: Boolean = false) {
+        if (index !in chapters.indices || (offline != null && offlineInspection == null)) return
+        if (!force && (chapterStates[index] is ReaderChapterState.Content || loadingJobs[index]?.isActive == true)) return
+        loadingJobs[index]?.cancel()
+        chapterStates[index] = ReaderChapterState.Loading
+        loadingJobs[index] = coroutineScope.launch {
+            try {
+                val state = when (source) {
+                    ReaderResourceSource.OnlineJm -> repository.loadChapter(chapters[index].id, request.album.imageHost)
+                    is ReaderResourceSource.Offline -> {
+                        if (force) offlineInspection = withContext(Dispatchers.IO) {
+                            inspectReaderOfflineManifest(source.manifest, request.album.id)
+                        }
+                        offlineInspection!!.readerChapterState(chapters[index].id)
+                    }
+                }
+                chapterStates[index] = state
+            } finally {
+                if (loadingJobs[index] === coroutineContext[Job]) loadingJobs.remove(index)
+            }
+        }
+    }
+    LaunchedEffect(selectedChapterIndex, settings.seamlessChapters, offlineInspection) {
+        val retained = readerWindowIndices(selectedChapterIndex, chapters.size, settings.seamlessChapters)
+        loadingJobs.keys.toList().filter { it !in retained }.forEach { loadingJobs.remove(it)?.cancel() }
+        chapterStates.keys.toList().filter { it !in retained }.forEach(chapterStates::remove)
+        val retainedIds = retained.map { chapters[it].id }.toSet()
+        geometries.keys.toList().filter { it !in retainedIds }.forEach { id ->
+            geometries.remove(id)?.let { saveGeometry(id, it) }
+        }
+        (listOf(selectedChapterIndex) + retained.filter { it != selectedChapterIndex }).forEach { index ->
+            if (chapterStates[index] !is ReaderChapterState.Error) ensureChapter(index)
+        }
+    }
+    val chapterState = chapterStates[selectedChapterIndex] ?: ReaderChapterState.Loading
+    val pages = (chapterState as? ReaderChapterState.Content)?.pages.orEmpty()
+    val items = readerWindowItems(chapters, selectedChapterIndex, chapterStates, settings.seamlessChapters)
+    // Pager 的页数、key 和内容读取同一快照，避免跨章增删窗口时新页数调用旧 key 闭包。
+    val renderedItems = rememberUpdatedState(items)
+    val latestItems by renderedItems
+    val itemsByKey = items.associateBy { it.key }
+    val latestItemsByKey by rememberUpdatedState(itemsByKey)
+    var warmedPageCounts by remember { mutableStateOf(emptyMap<String, Int>()) }
+    val neighborPageCounts = warmedPageCounts + chapterStates.mapNotNull { (index, state) ->
+        (state as? ReaderChapterState.Content)?.let { chapters[index].id to it.pages.size }
+    }.toMap()
+    val previousChapterIndex = when (source) {
+        ReaderResourceSource.OnlineJm -> (selectedChapterIndex - 1).takeIf { it in chapters.indices }
+        is ReaderResourceSource.Offline -> readerOfflineAdjacentChapterIndex(source.manifest.chapters, availableChapterIds, selectedChapterIndex, -1)
+    }
+    val nextChapterIndex = when (source) {
+        ReaderResourceSource.OnlineJm -> (selectedChapterIndex + 1).takeIf { it in chapters.indices }
+        is ReaderResourceSource.Offline -> readerOfflineAdjacentChapterIndex(source.manifest.chapters, availableChapterIds, selectedChapterIndex, 1)
+    }
+    val latestOnProgress by rememberUpdatedState(onProgress)
+    fun reportProgress() {
+        if (pages.isEmpty()) return
+        latestOnProgress(ReaderProgressUpdate(
+            album = request.album,
+            chapterId = selectedChapter.id,
+            chapterName = selectedChapter.displayName(selectedChapterIndex),
+            pageIndex = currentPageIndex.coerceIn(pages.indices),
+            pageCount = pages.size,
+        ))
+    }
+    fun closeReader() { reportProgress(); onBack() }
+    fun selectChapter(index: Int, landing: ReaderChapterLanding = ReaderChapterLanding.INITIAL) {
+        if (index !in chapters.indices || (offline != null && chapters[index].id !in availableChapterIds)) return
+        showCatalog = false
+        if (index == selectedChapterIndex) return
+        reportProgress()
+        selectedChapterIndex = index
+        currentPageIndex = 0
+        chapterLanding = landing
+        sliderDraft = null
+        stripAddress = null
+        navigationVersion++
+    }
     fun updateSettings(updated: ReaderSettings) {
+        sliderDraft = null
         settings = updated
         settingsStore.save(updated)
     }
-
-    fun selectChapter(index: Int, landing: ReaderChapterLanding = ReaderChapterLanding.INITIAL) {
-        val safeIndex = index.coerceIn(chapters.indices)
-        if (safeIndex == selectedChapterIndex) return
-        if (offline != null && chapters[safeIndex].id !in availableChapterIds) return
-        (chapterState as? ReaderChapterState.Content)?.pages?.takeIf { it.isNotEmpty() }?.let { loadedPages ->
-            onProgress(
-                ReaderProgressUpdate(
-                    album = request.album,
-                    chapterId = selectedChapter.id,
-                    chapterName = selectedChapter.displayName(selectedChapterIndex),
-                    pageIndex = currentPageIndex.coerceIn(loadedPages.indices),
-                    pageCount = loadedPages.size,
-                ),
-            )
-        }
-        chapterLanding = landing
-        selectedChapterIndex = safeIndex
-        initialProgressConsumed = true
-        currentPageIndex = 0
-        sliderDraft = null
-        showCatalog = false
+    val viewportKey = listOf(navigationVersion, settings.mode, settings.seamlessChapters, settings.doublePageMode, settings.coverSingle)
+    val restoreAddress = remember(viewportKey) {
+        ReaderPageAddress(selectedChapter.id, if (chapterLanding == ReaderChapterLanding.LAST) Int.MAX_VALUE else currentPageIndex)
     }
-
-    LaunchedEffect(selectedChapter.id, chapterRetryKey, repository, source) {
-        chapterState = ReaderChapterState.Loading
-        currentPageIndex = initialPageForChapter
-        val loadedState = when (source) {
-            ReaderResourceSource.OnlineJm -> repository.loadChapter(
-                chapterId = selectedChapter.id,
-                imageHostHint = request.album.imageHost,
-            )
-            is ReaderResourceSource.Offline -> {
-                val inspection = withContext(Dispatchers.IO) {
-                    inspectReaderOfflineManifest(source.manifest, request.album.id)
-                }
-                offlineInspection = inspection
-                neighborPageCounts = inspection.chapters
-                    .filter { it.error == null }
-                    .associate { it.chapter.id to it.files.size }
-                inspection.readerChapterState(selectedChapter.id)
+    val restoreFraction = remember(viewportKey) {
+        if (settings.mode == ReaderMode.WEBTOON && stripAddress == restoreAddress) stripFraction else 0f
+    }
+    val initialIndex = readerWindowPageIndex(items, restoreAddress).coerceAtLeast(0)
+    val knownAspects = items.filterIsInstance<ReaderWindowItem.Page>().mapNotNull { item ->
+        geometryFor(item.address.chapterId).knownAspectOf(item.address.pageIndex)?.let { item.address to it }
+    }.toMap()
+    val candidateSpreads = readerBuildSpreads(items, settings.mode, settings.doublePageMode, knownAspects,
+        viewportDp.width.value, viewportDp.height.value, settings.coverSingle)
+    // 页数、key 和内容共享已提交分组；手势/缩放中不重排，空闲后按叶页地址重新定位。
+    val renderedSpreads = key(viewportKey) { remember { mutableStateOf(candidateSpreads) } }
+    var spreadZoomed by key(viewportKey) { remember { mutableStateOf(false) } }
+    var projectionInitialized by key(viewportKey) { remember { mutableStateOf(false) } }
+    val listState = key(viewportKey) { rememberLazyListState(initialFirstVisibleItemIndex = initialIndex) }
+    val pagerState = key(viewportKey) { rememberPagerState(
+        initialPage = readerSpreadIndex(candidateSpreads, restoreAddress).coerceAtLeast(0), pageCount = { renderedSpreads.value.size }) }
+    var restoring by key(viewportKey) { remember { mutableStateOf(true) } }
+    LaunchedEffect(viewportKey, candidateSpreads) {
+        if (settings.mode == ReaderMode.WEBTOON) return@LaunchedEffect
+        if (chapterStates[selectedChapterIndex] !is ReaderChapterState.Content) return@LaunchedEffect
+        snapshotFlow { !pagerState.isScrollInProgress && !spreadZoomed }.first { it }
+        val previous = renderedSpreads.value
+        val measuredKey = pagerState.layoutInfo.visiblePagesInfo.firstOrNull { it.index == pagerState.settledPage }?.key
+        val oldSpread = previous.firstOrNull { it.key == measuredKey }
+        val initial = !projectionInitialized
+        val focusedAddress = if (initial) restoreAddress.copy(pageIndex = restoreAddress.pageIndex.coerceIn(pages.indices))
+            else ReaderPageAddress(chapters[selectedChapterIndex].id, currentPageIndex)
+        val boundary = oldSpread?.items?.singleOrNull() as? ReaderWindowItem.Boundary
+        val boundaryPages = boundary?.let { b -> candidateSpreads.flatMap { it.pages }.filter { it.chapterIndex == b.chapterIndex } }
+        val destination = if (!initial && !boundaryPages.isNullOrEmpty()) {
+            if (boundary.chapterIndex < selectedChapterIndex) boundaryPages.last().address else boundaryPages.first().address
+        } else focusedAddress
+        val retainedKey = if (!initial) candidateSpreads.indexOfFirst { it.key == measuredKey } else -1
+        val target = if (retainedKey >= 0) retainedKey else readerSpreadIndex(candidateSpreads, destination).coerceAtLeast(0)
+        restoring = true
+        try {
+            renderedSpreads.value = candidateSpreads
+            withFrameNanos { }
+            if (target in candidateSpreads.indices) pagerState.scrollToPage(target)
+            readerSpreadFocus(candidateSpreads.getOrNull(target) ?: return@LaunchedEffect, destination, selectedChapterIndex)?.let {
+                selectedChapterIndex = it.chapterIndex
+                currentPageIndex = it.address.pageIndex
             }
-        }
-        chapterState = loadedState
-        if (loadedState is ReaderChapterState.Content) {
-            // 上拉换到上一话时落在最后一页：回看的自然预期是"接着刚才那一页往前"。
-            val landingPage = when (chapterLanding) {
-                ReaderChapterLanding.LAST -> loadedState.pages.lastIndex
-                ReaderChapterLanding.INITIAL -> initialPageForChapter
-            }.coerceIn(loadedState.pages.indices)
             chapterLanding = ReaderChapterLanding.INITIAL
-            currentPageIndex = landingPage
-            listState.scrollToReaderPage(landingPage)
-            initialProgressConsumed = true
+            projectionInitialized = true
+            withFrameNanos { }
+        } finally { restoring = false }
+    }
+    LaunchedEffect(viewportKey, chapterState is ReaderChapterState.Content) {
+        if (settings.mode != ReaderMode.WEBTOON) return@LaunchedEffect
+        if (chapterState !is ReaderChapterState.Content) return@LaunchedEffect
+        val pageIndex = restoreAddress.pageIndex.coerceIn(chapterState.pages.indices)
+        val address = restoreAddress.copy(pageIndex = pageIndex)
+        withFrameNanos { }
+        val target = readerWindowPageIndex(latestItems, address)
+        if (target >= 0) {
+            if (settings.mode == ReaderMode.WEBTOON) {
+                val offset = (geometryFor(address.chapterId).aspectOf(pageIndex) * viewportWidthPx * restoreFraction).roundToInt()
+                listState.scrollToItem(target, offset)
+            } else pagerState.scrollToPage(target)
+            currentPageIndex = pageIndex
+            chapterLanding = ReaderChapterLanding.INITIAL
         }
+        restoring = false
     }
-
-    val pages = (chapterState as? ReaderChapterState.Content)?.pages.orEmpty()
-    val latestOnProgress by rememberUpdatedState(onProgress)
-
-    fun reportProgress() {
-        if (pages.isEmpty()) return
-        latestOnProgress(
-            ReaderProgressUpdate(
-                album = request.album,
-                chapterId = selectedChapter.id,
-                chapterName = selectedChapter.displayName(selectedChapterIndex),
-                pageIndex = currentPageIndex.coerceIn(pages.indices),
-                pageCount = pages.size,
-            ),
-        )
-    }
-
-    fun closeReader() {
-        reportProgress()
-        onBack()
-    }
-
-    LaunchedEffect(listState, pages) {
-        if (pages.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(viewportKey) {
         snapshotFlow {
-            selectCurrentReaderPage(
-                visiblePages = listState.layoutInfo.visibleItemsInfo.map {
-                    ReaderVisiblePage(index = it.index, offset = it.offset, size = it.size)
-                },
-                viewportStart = listState.layoutInfo.viewportStartOffset,
-                viewportEnd = listState.layoutInfo.viewportEndOffset,
-            )
-        }.distinctUntilChanged().collect { index ->
-            currentPageIndex = index.coerceIn(pages.indices)
-        }
-    }
-
-    // 翻页速度与方向。用页码差而不是滚动像素：预取的单位本来就是页，
-    // 而同一段像素在长图页和短页上跨过的页数差很多。
-    LaunchedEffect(selectedChapter.id, pages.size) {
-        if (pages.isEmpty()) return@LaunchedEffect
-        var previousPage = currentPageIndex
-        var previousAt = System.nanoTime()
-        snapshotFlow { currentPageIndex }.distinctUntilChanged().collect { index ->
-            val now = System.nanoTime()
-            pageVelocity = readerPageVelocity(
-                previousVelocity = pageVelocity,
-                pageDelta = index - previousPage,
-                elapsedSeconds = (now - previousAt) / 1_000_000_000f,
-            )
-            if (index != previousPage) scrollingForward = index > previousPage
-            previousPage = index
-            previousAt = now
-        }
-    }
-
-    // 预取。刻意不再等"当前页已加载"——跳到第 200 页时当前页本身还在下载，
-    // 那道门槛会让后面几页一直排不上，正是"跳页后上下翻都很慢"的直接原因。
-    val estimatedPageWidthPx = geometry.estimatedWidthPx(viewportWidthPx)
-    LaunchedEffect(pages, currentPageIndex, pageVelocity, scrollingForward, viewportWidthPx, estimatedPageWidthPx) {
-        if (pages.isEmpty()) return@LaunchedEffect
-        prefetch.update(
-            chapterId = selectedChapter.id,
-            pages = pages,
-            center = currentPageIndex,
-            forward = scrollingForward,
-            velocity = pageVelocity,
-            viewportWidthPx = viewportWidthPx,
-            decodedWidthPx = estimatedPageWidthPx,
-            pageAspect = geometry.estimatedAspect(),
-        )
-    }
-
-    // 快读到章末（或回到章首）时把相邻那一话的模板与头几页备好，
-    // 让"拉到底换章"落地即有画面，而不是先看一屏转圈；顺手把页数记下来给提示卡用。
-    LaunchedEffect(selectedChapter.id, pages.size, currentPageIndex, viewportWidthPx, source) {
-        if (pages.isEmpty() || source != ReaderResourceSource.OnlineJm) return@LaunchedEffect
-        val nearEnd = pages.lastIndex - currentPageIndex <= READER_CHAPTER_WARMUP_DISTANCE
-        val nearStart = currentPageIndex <= READER_CHAPTER_WARMUP_DISTANCE
-        suspend fun warmUp(chapter: AlbumChapter) {
-            repository.prepareChapter(chapter.id, request.album.imageHost)?.let { prepared ->
-                neighborPageCounts = neighborPageCounts + (chapter.id to prepared.pages.size)
+            if (restoring) null else if (settings.mode == ReaderMode.WEBTOON) {
+                val info = listState.layoutInfo
+                val visible = info.visibleItemsInfo.filter { latestItemsByKey[it.key] is ReaderWindowItem.Page }
+                val dominant = visible.maxByOrNull {
+                    (minOf(it.offset + it.size, info.viewportEndOffset) - maxOf(it.offset, info.viewportStartOffset)).coerceAtLeast(0)
+                }
+                val page = dominant?.let { latestItemsByKey[it.key] as? ReaderWindowItem.Page }
+                page?.let { it to ((-dominant.offset).coerceAtLeast(0).toFloat() / dominant.size.coerceAtLeast(1)) }
+            } else {
+                // 用布局中的稳定 key 读取身份，邻章前插时不能把旧下标当成新章节。
+                if (pagerState.isScrollInProgress) null else {
+                    val settled = pagerState.settledPage
+                    val visible = pagerState.layoutInfo.visiblePagesInfo
+                    val pageInfo = visible.firstOrNull { it.index == settled } ?: visible.minByOrNull { abs(it.offset) }
+                    val spread = renderedSpreads.value.firstOrNull { it.key == pageInfo?.key }
+                    spread?.let { readerSpreadFocus(it, ReaderPageAddress(chapters[selectedChapterIndex].id, currentPageIndex), selectedChapterIndex) }?.let { it to 0f }
+                }
             }
-            repository.warmUpChapter(chapter.id, request.album.imageHost, viewportWidthPx)
+        }.distinctUntilChanged().collect { visible ->
+            if (visible != null) {
+                val (page, fraction) = visible
+                selectedChapterIndex = page.chapterIndex
+                currentPageIndex = page.address.pageIndex
+                if (settings.mode == ReaderMode.WEBTOON) {
+                    stripAddress = page.address
+                    stripFraction = fraction.coerceIn(0f, 1f)
+                }
+            }
         }
-        if (nearEnd) chapters.getOrNull(selectedChapterIndex + 1)?.let { warmUp(it) }
-        if (nearStart) chapters.getOrNull(selectedChapterIndex - 1)?.let { warmUp(it) }
     }
-
     LaunchedEffect(request.album.id, selectedChapter.id, currentPageIndex, pages.size) {
-        if (pages.isEmpty()) return@LaunchedEffect
-        delay(READER_PROGRESS_SAVE_DELAY_MILLIS)
-        reportProgress()
+        if (pages.isNotEmpty()) { delay(READER_PROGRESS_SAVE_DELAY_MILLIS); reportProgress() }
     }
-
+    suspend fun moveToItem(index: Int) {
+        if (index !in latestItems.indices) return
+        restoring = true
+        try {
+            if (settings.mode == ReaderMode.WEBTOON) listState.scrollToItem(index) else {
+                val item = latestItems[index]
+                val target = renderedSpreads.value.indexOfFirst { item in it.items }
+                if (target >= 0) pagerState.scrollToPage(target)
+            }
+        } finally { restoring = false }
+    }
     fun scrollToPage(index: Int) {
         if (pages.isEmpty()) return
-        val target = index.coerceIn(pages.indices)
-        // 先把页码推到目标值，再去滚动。
-        // scrollToItem 是挂起函数，而进度条显示的是 currentPageIndex——后者要等列表真正落位、
-        // snapshotFlow 再算一轮才会更新。若在这之前就交还控制权（松手时 sliderDraft 已被清空），
-        // 进度条会先读到旧页码，然后被 MIUIX Slider 的非拖拽动画（stiffness=322，约半秒）
-        // 慢慢地"退回"原处——表现就是"拖到 30 松手，进度条自己滑回 2"。
-        // 万一列表到不了目标（章节末尾余量不足），后续 snapshotFlow 会把它纠正回真实页。
-        currentPageIndex = target
-        coroutineScope.launch {
-            listState.scrollToReaderPage(target)
-        }
+        val targetPage = index.coerceIn(pages.indices)
+        val target = readerWindowPageIndex(items, ReaderPageAddress(selectedChapter.id, targetPage))
+        currentPageIndex = targetPage
+        stripAddress = null
+        coroutineScope.launch { moveToItem(target) }
     }
-
-    val latestPreviousPage by rememberUpdatedState(newValue = { scrollToPage(currentPageIndex - 1) })
-    val latestNextPage by rememberUpdatedState(newValue = { scrollToPage(currentPageIndex + 1) })
-    DisposableEffect(settings.volumeKeyPaging, pages) {
+    fun stepPage(direction: Int) {
+        if (settings.mode != ReaderMode.WEBTOON) {
+            val target = pagerState.currentPage + direction
+            if (target in renderedSpreads.value.indices) coroutineScope.launch { pagerState.scrollToPage(target) }
+            return
+        }
+        val address = ReaderPageAddress(selectedChapter.id, currentPageIndex)
+        val current = readerWindowPageIndex(latestItems, address)
+        if (current < 0) return
+        val target = current + direction
+        coroutineScope.launch { moveToItem(target) }
+    }
+    // 使用普通 lambda 更新回调，避免局部函数引用的相等性保留首次加载的窗口。
+    val latestStep by rememberUpdatedState<(Int) -> Unit> { direction -> stepPage(direction) }
+    DisposableEffect(settings.volumeKeyPaging, pages.isNotEmpty()) {
         ReaderVolumeKeyDispatcher.handler = if (settings.volumeKeyPaging && pages.isNotEmpty()) {
             { keyCode ->
                 when (keyCode) {
-                    KeyEvent.KEYCODE_VOLUME_UP -> {
-                        latestPreviousPage()
-                        true
-                    }
-                    KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                        latestNextPage()
-                        true
-                    }
+                    KeyEvent.KEYCODE_VOLUME_UP -> { latestStep(-1); true }
+                    KeyEvent.KEYCODE_VOLUME_DOWN -> { latestStep(1); true }
                     else -> false
                 }
             }
-        } else {
-            null
-        }
+        } else null
         onDispose { ReaderVolumeKeyDispatcher.handler = null }
+    }
+    val latestDecoded by rememberUpdatedState<(ReaderPage, Int, Int) -> Unit> { page, width, height ->
+        latestItems.filterIsInstance<ReaderWindowItem.Page>().filter { it.page.cacheKey == page.cacheKey }.forEach {
+            geometryFor(it.address.chapterId).record(it.address.pageIndex, width, height)
+        }
+    }
+    val prefetch = remember(context, coroutineScope) {
+        ReaderPrefetchController(context, context.imageLoader, coroutineScope) { page, width, height -> latestDecoded(page, width, height) }
+    }
+    DisposableEffect(prefetch) { onDispose { prefetch.clear() } }
+    var pageVelocity by remember { mutableFloatStateOf(0f) }
+    var scrollingForward by remember { mutableStateOf(true) }
+    LaunchedEffect(source) {
+        var previous = selectedChapterIndex to currentPageIndex
+        var previousAt = System.nanoTime()
+        snapshotFlow { selectedChapterIndex to currentPageIndex }.distinctUntilChanged().collect { position ->
+            val now = System.nanoTime()
+            val delta = if (position.first == previous.first) position.second - previous.second else (position.first - previous.first).coerceIn(-1, 1)
+            pageVelocity = readerPageVelocity(pageVelocity, delta, (now - previousAt) / 1_000_000_000f)
+            if (delta != 0) scrollingForward = delta > 0
+            previous = position
+            previousAt = now
+        }
+    }
+    val flatPages = items.filterIsInstance<ReaderWindowItem.Page>()
+    val activeFlatIndex = flatPages.indexOfFirst { it.address == ReaderPageAddress(selectedChapter.id, currentPageIndex) }
+    geometryFor(selectedChapter.id)
+    val estimatedPageWidthPx = geometries.values.maxOfOrNull { it.estimatedWidthPx(viewportWidthPx) } ?: viewportWidthPx
+    val estimatedAspect = geometries.values.maxOfOrNull { it.estimatedAspect() } ?: READER_DEFAULT_PAGE_ASPECT
+    LaunchedEffect(flatPages, activeFlatIndex, pageVelocity, scrollingForward, viewportWidthPx, estimatedPageWidthPx, estimatedAspect) {
+        if (activeFlatIndex >= 0) prefetch.update(
+            pages = flatPages.map { it.page }, center = activeFlatIndex, forward = scrollingForward,
+            velocity = pageVelocity, viewportWidthPx = viewportWidthPx, decodedWidthPx = estimatedPageWidthPx,
+            pageAspect = estimatedAspect,
+        )
+    }
+    // 未开启无缝连续时，也保留旧阅读器接近章末预热相邻章节的行为。
+    LaunchedEffect(selectedChapterIndex, currentPageIndex, pages.size, settings.seamlessChapters, source) {
+        if (settings.seamlessChapters || source != ReaderResourceSource.OnlineJm || pages.isEmpty()) return@LaunchedEffect
+        val adjacent = buildList {
+            if (currentPageIndex <= READER_CHAPTER_WARMUP_DISTANCE) add(selectedChapterIndex - 1)
+            if (pages.lastIndex - currentPageIndex <= READER_CHAPTER_WARMUP_DISTANCE) add(selectedChapterIndex + 1)
+        }
+        adjacent.filter { it in chapters.indices }.forEach { index ->
+            val chapter = chapters[index]
+            repository.prepareChapter(chapter.id, request.album.imageHost)?.let {
+                warmedPageCounts = (warmedPageCounts + (chapter.id to it.pages.size))
+                    .filterKeys { id -> readerWindowIndices(selectedChapterIndex, chapters.size, true).any { chapters[it].id == id } }
+            }
+            repository.warmUpChapter(chapter.id, request.album.imageHost, viewportWidthPx)
+        }
+    }
+    LaunchedEffect(itemsByKey.keys) {
+        edgeColors.keys.toList().filter { key -> items.none { key.startsWith("${it.key}:palette:") } }.forEach(edgeColors::remove)
+        failedPages.keys.toList().filter { it !in itemsByKey }.forEach(failedPages::remove)
+        pageRetryKeys.keys.toList().filter { it !in itemsByKey }.forEach(pageRetryKeys::remove)
     }
 
     // 换章手势跑在 [ReaderPages] 里（listState 与缩放状态都在那儿），提示卡却必须画在
@@ -576,154 +649,185 @@ private fun ComicReaderContent(
     }
     // 松手后 direction/overscroll 立刻归零，退场动画却还在放——直接读实时状态的话，
     // 卡片会在淡出的半秒里翻成反方向的文案，所以渲染模型单独留一份快照。
+    LaunchedEffect(settings.mode, settings.seamlessChapters) { flipHint.resetAfterRelease() }
     var lastFlipCard by remember(pages) { mutableStateOf<ReaderFlipCardModel?>(null) }
     if (flipCard != null && flipCard != lastFlipCard) lastFlipCard = flipCard
 
     val systemBarColor = MiuixTheme.colorScheme.background
     ReaderSystemBarsEffect(
         immersive = !controlsVisible && !showCatalog && !showSettings,
-        barColor = systemBarColor.toArgb(),
+        barColor = Color.Transparent.toArgb(),
         useDarkIcons = systemBarColor.luminance() > 0.5f,
     )
-    BackHandler(onBack = ::closeReader)
+    BackHandler(onBack = { closeReader() })
 
     val readerBarBackdrop = rememberBarBackdrop()
-    GlassTopBarHost {
-        BindTopBarGlassScroll(listState)
-        Scaffold(modifier = Modifier.fillMaxSize()) {
+    Scaffold(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MiuixTheme.colorScheme.surface),
+        ) {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MiuixTheme.colorScheme.surface),
+                Modifier.fillMaxSize().then(
+                    if (readerBarBackdrop != null) Modifier.layerBackdrop(readerBarBackdrop) else Modifier,
+                ),
             ) {
-                Box(
-                    Modifier.fillMaxSize().then(
-                        if (readerBarBackdrop != null) Modifier.layerBackdrop(readerBarBackdrop) else Modifier,
-                    ),
-                ) {
-                    when (val state = chapterState) {
-                        ReaderChapterState.Loading -> ReaderLoading(chapterName = selectedChapter.displayName(selectedChapterIndex))
-                        is ReaderChapterState.Error -> ReaderError(
-                            message = state.message,
-                            onRetry = { chapterRetryKey++ },
-                            onBack = ::closeReader,
-                        )
-                        is ReaderChapterState.Content -> ReaderPages(
-                            pages = state.pages,
-                            geometry = geometry,
-                            viewportWidthPx = viewportWidthPx,
-                            listState = listState,
-                            failedPages = failedPages,
-                            retryKeys = pageRetryKeys,
-                            continuousFlipEnabled = settings.continuousChapterFlip,
-                            flipHint = flipHint,
-                            canFlipForward = flipForwardTarget != null,
-                            canFlipBackward = flipBackwardTarget != null,
-                            onFlipForward = {
-                                nextChapterIndex?.let { selectChapter(it, ReaderChapterLanding.INITIAL) }
-                            },
-                            onFlipBackward = {
-                                previousChapterIndex?.let { selectChapter(it, ReaderChapterLanding.LAST) }
-                            },
-                            onPageFailed = { index, message -> failedPages[index] = message },
-                            onPageLoaded = { index, width, height ->
-                                failedPages.remove(index)
-                                geometry.record(index, width, height)
-                                prefetch.markSucceeded(index)
-                            },
-                            onRetryPage = { index ->
-                                failedPages.remove(index)
-                                pageRetryKeys[index] = (pageRetryKeys[index] ?: 0) + 1
-                            },
+                when (val state = chapterState) {
+                    ReaderChapterState.Loading -> ReaderLoading(chapterName = selectedChapter.displayName(selectedChapterIndex))
+                    is ReaderChapterState.Error -> ReaderError(
+                        message = state.message,
+                        onRetry = { ensureChapter(selectedChapterIndex, force = true) },
+                        onBack = { closeReader() },
+                    )
+                    is ReaderChapterState.Content -> key(viewportKey) {
+                        val pageContent: @Composable (ReaderWindowItem.Page, Boolean) -> Unit = { item, paged ->
+                            val retry = pageRetryKeys[item.key] ?: 0
+                            val paletteKey = "${item.key}:palette:$retry"
+                            ReaderPageImage(
+                                page = item.page,
+                                aspect = geometryFor(item.address.chapterId).aspectOf(item.address.pageIndex),
+                                viewportWidthPx = viewportWidthPx,
+                                retryKey = retry,
+                                knownError = failedPages[item.key],
+                                paged = paged,
+                                autoBackground = settings.autoPageBackground && (settings.mode == ReaderMode.LEFT_TO_RIGHT || settings.mode == ReaderMode.RIGHT_TO_LEFT),
+                                edgeColors = edgeColors[paletteKey],
+                                onEdgeColors = { colors ->
+                                    if ((pageRetryKeys[item.key] ?: 0) == retry && latestItemsByKey.containsKey(item.key)) {
+                                        edgeColors.keys.toList().filter { it.startsWith("${item.key}:palette:") }.forEach(edgeColors::remove)
+                                        edgeColors[paletteKey] = colors
+                                    }
+                                },
+                                onError = { failedPages[item.key] = it },
+                                onLoaded = { width, height ->
+                                    failedPages.remove(item.key)
+                                    geometryFor(item.address.chapterId).record(item.address.pageIndex, width, height)
+                                    prefetch.markSucceeded(item.page.cacheKey)
+                                },
+                                onRetry = { failedPages.remove(item.key); pageRetryKeys[item.key] = (pageRetryKeys[item.key] ?: 0) + 1 },
+                            )
+                        }
+                        val boundaryContent: @Composable (ReaderWindowItem) -> Unit = { item ->
+                            ReaderChapterBoundary(
+                                item = item, chapters = chapters,
+                                onRetry = { if (item is ReaderWindowItem.Boundary) ensureChapter(item.chapterIndex, force = true) },
+                                onSkip = if (offline != null && item is ReaderWindowItem.Boundary) {
+                                    readerOfflineAdjacentChapterIndex(offline.manifest.chapters, availableChapterIds, item.chapterIndex, if (item.chapterIndex > selectedChapterIndex) 1 else -1)
+                                        ?.let { target -> { selectChapter(target, if (item.chapterIndex < selectedChapterIndex) ReaderChapterLanding.LAST else ReaderChapterLanding.INITIAL) } }
+                                } else null,
+                            )
+                        }
+                        if (settings.mode == ReaderMode.WEBTOON) ReaderPages(
+                            items = items, listState = listState,
+                            continuousFlipEnabled = settings.continuousChapterFlip && !settings.seamlessChapters,
+                            flipHint = flipHint, canFlipForward = flipForwardTarget != null, canFlipBackward = flipBackwardTarget != null,
+                            onFlipForward = { nextChapterIndex?.let { selectChapter(it) } },
+                            onFlipBackward = { previousChapterIndex?.let { selectChapter(it, ReaderChapterLanding.LAST) } },
                             onToggleControls = { controlsVisible = !controlsVisible },
+                            pageContent = { pageContent(it, false) }, boundaryContent = boundaryContent,
+                        ) else ReaderPagedPages(
+                            itemState = renderedSpreads, mode = settings.mode, pagerState = pagerState,
+                            onZoomChanged = { spreadZoomed = it },
+                            onToggleControls = { controlsVisible = !controlsVisible },
+                            pageContent = { pageContent(it, true) }, boundaryContent = boundaryContent,
                         )
                     }
-
-                }
-                if (!controlsVisible) {
-                    ImmersiveStatus(
-                        showBatteryTime = settings.showBatteryTime,
-                        showPageNumber = settings.showPageNumber,
-                        currentPage = currentPageIndex + 1,
-                        totalPages = pages.size,
-                    )
                 }
 
-                AnimatedVisibility(
-                    visible = controlsVisible,
-                    enter = fadeIn() + slideInVertically { -it },
-                    exit = fadeOut() + slideOutVertically { -it },
-                    modifier = Modifier.align(Alignment.TopCenter),
-                ) {
-                    ReaderTopBar(
-                        backdrop = readerBarBackdrop,
-                        chapter = selectedChapter,
-                        chapterIndex = selectedChapterIndex,
-                        chapterCount = chapters.size,
-                        source = source,
-                        onBack = ::closeReader,
-                    )
-                }
-
-                AnimatedVisibility(
-                    visible = controlsVisible,
-                    enter = fadeIn() + slideInVertically { it },
-                    exit = fadeOut() + slideOutVertically { it },
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                ) {
-                    ReaderControlPanel(
-                        currentPageIndex = currentPageIndex,
-                        totalPages = pages.size,
-                        sliderDraft = sliderDraft,
-                        onSliderChange = {
-                            // 进度条属于独立操作：一旦开始拖动，就清空章末换章草稿，
-                            // 避免之前在章尾累计的状态在松开进度条时误提交换章。
-                            flipHint.resetAfterRelease()
-                            sliderDraft = it
-                        },
-                        onSliderFinished = {
-                            flipHint.resetAfterRelease()
-                            // 顺序要紧：scrollToPage 会同步把 currentPageIndex 推到目标页，
-                            // 之后清空草稿才不会让进度条露出一帧旧页码。
-                            scrollToPage(readerPageFromSlider(sliderDraft ?: currentPageIndex.toFloat(), pages.size))
-                            sliderDraft = null
-                        },
-                        canPreviousChapter = previousChapterIndex != null,
-                        canNextChapter = nextChapterIndex != null,
-                        failedPage = failedPages.keys.minOrNull(),
-                        onPreviousChapter = { previousChapterIndex?.let { selectChapter(it) } },
-                        onNextChapter = { nextChapterIndex?.let { selectChapter(it) } },
-                        onShowCatalog = { showCatalog = true },
-                        onShowSettings = { showSettings = true },
-                    )
-                }
-
-                // 顶栏/底栏之后才画：换章提示是当下这一下手势的反馈，被任何常驻控件盖住都是错的。
-                ReaderChapterFlipCard(
-                    visible = flipCard != null,
-                    model = lastFlipCard,
-                    source = source,
-                    modifier = Modifier.align(
-                        // 退场动画期间读的是快照，方向也得跟着快照，否则卡片会在淡出时换边。
-                        if (lastFlipCard?.forward != false) Alignment.BottomCenter else Alignment.TopCenter,
-                    ),
-                )
-
-                ReaderCatalogSheet(
-                    show = showCatalog,
-                    chapters = chapters,
-                    selectedChapterIndex = selectedChapterIndex,
-                    availableChapterIds = if (offline != null) availableChapterIds else null,
-                    onSelect = { selectChapter(it) },
-                    onDismiss = { showCatalog = false },
-                )
-                ReaderSettingsSheet(
-                    show = showSettings,
-                    settings = settings,
-                    onSettingsChange = ::updateSettings,
-                    onDismiss = { showSettings = false },
+            }
+            if (!controlsVisible) {
+                ImmersiveStatus(
+                    showBatteryTime = settings.showBatteryTime,
+                    showPageNumber = settings.showPageNumber,
+                    currentPage = currentPageIndex + 1,
+                    totalPages = pages.size,
                 )
             }
+
+            AnimatedVisibility(
+                visible = controlsVisible,
+                enter = fadeIn() + slideInVertically { -it },
+                exit = fadeOut() + slideOutVertically { -it },
+                modifier = Modifier.align(Alignment.TopCenter),
+            ) {
+                ReaderTopBar(
+                    backdrop = readerBarBackdrop,
+                    chapter = selectedChapter,
+                    chapterIndex = selectedChapterIndex,
+                    chapterCount = chapters.size,
+                    source = source,
+                    onBack = { closeReader() },
+                    onShowSettings = { showSettings = true },
+                )
+            }
+
+            AnimatedVisibility(
+                visible = controlsVisible,
+                enter = fadeIn() + slideInVertically { it },
+                exit = fadeOut() + slideOutVertically { it },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            ) {
+                ReaderControlPanel(
+                    backdrop = readerBarBackdrop,
+                    pageLabel = { index ->
+                        val spread = renderedSpreads.value.firstOrNull { it.contains(ReaderPageAddress(selectedChapter.id, index)) }
+                        if (settings.mode != ReaderMode.WEBTOON && spread != null && spread.pages.size == 2) {
+                            "第 ${spread.pages.first().address.pageIndex + 1}–${spread.pages.last().address.pageIndex + 1} 页"
+                        } else "第 ${index + 1} 页"
+                    },
+                    currentPageIndex = currentPageIndex,
+                    totalPages = pages.size,
+                    sliderDraft = sliderDraft,
+                    onSliderChange = {
+                        // 进度条属于独立操作：一旦开始拖动，就清空章末换章草稿，
+                        // 避免之前在章尾累计的状态在松开进度条时误提交换章。
+                        flipHint.resetAfterRelease()
+                        sliderDraft = it
+                    },
+                    onSliderFinished = {
+                        flipHint.resetAfterRelease()
+                        // 顺序要紧：scrollToPage 会同步把 currentPageIndex 推到目标页，
+                        // 之后清空草稿才不会让进度条露出一帧旧页码。
+                        scrollToPage(readerPageFromSlider(sliderDraft ?: currentPageIndex.toFloat(), pages.size))
+                        sliderDraft = null
+                    },
+                    canPreviousChapter = previousChapterIndex != null,
+                    canNextChapter = nextChapterIndex != null,
+                    failedPage = flatPages.filter { it.address.chapterId == selectedChapter.id && it.key in failedPages }
+                        .minOfOrNull { it.address.pageIndex },
+                    reverseDirection = settings.mode == ReaderMode.RIGHT_TO_LEFT,
+                    onPreviousChapter = { previousChapterIndex?.let { selectChapter(it) } },
+                    onNextChapter = { nextChapterIndex?.let { selectChapter(it) } },
+                    onShowCatalog = { showCatalog = true },
+                )
+            }
+
+            // 顶栏/底栏之后才画：换章提示是当下这一下手势的反馈，被任何常驻控件盖住都是错的。
+            ReaderChapterFlipCard(
+                visible = flipCard != null,
+                model = lastFlipCard,
+                source = source,
+                modifier = Modifier.align(
+                    // 退场动画期间读的是快照，方向也得跟着快照，否则卡片会在淡出时换边。
+                    if (lastFlipCard?.forward != false) Alignment.BottomCenter else Alignment.TopCenter,
+                ),
+            )
+
+            ReaderCatalogSheet(
+                show = showCatalog,
+                chapters = chapters,
+                selectedChapterIndex = selectedChapterIndex,
+                availableChapterIds = if (offline != null) availableChapterIds else null,
+                onSelect = { selectChapter(it) },
+                onDismiss = { showCatalog = false },
+            )
+            ReaderSettingsSheet(
+                show = showSettings,
+                settings = settings,
+                onSettingsChange = { updateSettings(it) },
+                onDismiss = { showSettings = false },
+            )
         }
     }
 
@@ -731,29 +835,24 @@ private fun ComicReaderContent(
 
 @Composable
 private fun ReaderPages(
-    pages: List<ReaderPage>,
-    geometry: ReaderPageGeometryState,
-    viewportWidthPx: Int,
+    items: List<ReaderWindowItem>,
     listState: LazyListState,
-    failedPages: Map<Int, String>,
-    retryKeys: Map<Int, Int>,
     continuousFlipEnabled: Boolean,
     flipHint: ReaderFlipHintState,
     canFlipForward: Boolean,
     canFlipBackward: Boolean,
     onFlipForward: () -> Unit,
     onFlipBackward: () -> Unit,
-    onPageFailed: (Int, String) -> Unit,
-    onPageLoaded: (Int, Int, Int) -> Unit,
-    onRetryPage: (Int) -> Unit,
     onToggleControls: () -> Unit,
+    pageContent: @Composable (ReaderWindowItem.Page) -> Unit,
+    boundaryContent: @Composable (ReaderWindowItem) -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
-    var scale by remember(pages) { mutableFloatStateOf(READER_MIN_ZOOM) }
-    var offset by remember(pages) { mutableStateOf(Offset.Zero) }
-    var viewportSize by remember(pages) { mutableStateOf(IntSize.Zero) }
-    var zoomAnimation by remember(pages) { mutableStateOf<Job?>(null) }
-    DisposableEffect(pages) {
+    var scale by remember { mutableFloatStateOf(READER_MIN_ZOOM) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    var viewportSize by remember { mutableStateOf(IntSize.Zero) }
+    var zoomAnimation by remember { mutableStateOf<Job?>(null) }
+    DisposableEffect(Unit) {
         onDispose { zoomAnimation?.cancel() }
     }
 
@@ -900,7 +999,7 @@ private fun ReaderPages(
                     viewportHeight = size.height.toFloat(),
                 ).toOffset()
             }
-            .pointerInput(pages) {
+            .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onToggleControls() },
                     onDoubleTap = { position ->
@@ -915,7 +1014,7 @@ private fun ReaderPages(
                     },
                 )
             }
-            .pointerInput(pages) {
+            .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
                     var transforming = false
@@ -970,21 +1069,227 @@ private fun ReaderPages(
             userScrollEnabled = true,
         ) {
             itemsIndexed(
-                items = pages,
-                key = { _, page -> page.cacheKey },
-                contentType = { _, _ -> "reader-page" },
-            ) { index, page ->
-                ReaderPageImage(
-                    page = page,
-                    aspect = geometry.aspectOf(index),
-                    viewportWidthPx = viewportWidthPx,
-                    retryKey = retryKeys[index] ?: 0,
-                    knownError = failedPages[index],
-                    onError = { message -> onPageFailed(index, message) },
-                    onLoaded = { width, height -> onPageLoaded(index, width, height) },
-                    onRetry = { onRetryPage(index) },
+                items = items,
+                key = { _, item -> item.key },
+                contentType = { _, item -> if (item is ReaderWindowItem.Page) "reader-page" else "reader-boundary" },
+            ) { _, item ->
+                if (item is ReaderWindowItem.Page) pageContent(item) else boundaryContent(item)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderPagedPages(
+    itemState: State<List<ReaderSpread>>,
+    mode: ReaderMode,
+    pagerState: PagerState,
+    onToggleControls: () -> Unit,
+    onZoomChanged: (Boolean) -> Unit,
+    pageContent: @Composable (ReaderWindowItem.Page) -> Unit,
+    boundaryContent: @Composable (ReaderWindowItem) -> Unit,
+) {
+    val items = itemState.value
+    val zoomed = remember { mutableStateMapOf<String, Boolean>() }
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val activeKey = pagerState.layoutInfo.visiblePagesInfo.firstOrNull { it.index == pagerState.currentPage }?.key
+    val canScroll = zoomed[activeKey] != true
+    LaunchedEffect(canScroll) { onZoomChanged(!canScroll) }
+    LaunchedEffect(items.map { it.key }) { zoomed.keys.toList().filter { key -> items.none { it.key == key } }.forEach(zoomed::remove) }
+    val content: @Composable (Int) -> Unit = { index ->
+        val spread = itemState.value.getOrNull(index)
+        when {
+            spread == null -> Unit
+            spread.pages.isNotEmpty() -> ReaderZoomablePage(
+                onToggleControls = onToggleControls,
+                onZoomChanged = {
+                    zoomed[spread.key] = it
+                    if (spread.key == activeKey) onZoomChanged(it)
+                },
+            ) {
+                // 固定物理左右顺序，与系统语言的 RTL 无关；缩放作用于整个双页。
+                androidx.compose.runtime.CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    Row(Modifier.fillMaxSize()) {
+                        spread.displayPages(mode).forEach { page ->
+                            key(page.key) { Box(Modifier.weight(1f).fillMaxSize()) { pageContent(page) } }
+                        }
+                    }
+                }
+            }
+            else -> Box(
+                Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { onToggleControls() }) },
+                contentAlignment = Alignment.Center,
+            ) { boundaryContent(spread.items.first()) }
+        }
+    }
+    if (mode == ReaderMode.TOP_TO_BOTTOM) {
+        VerticalPager(
+            state = pagerState, modifier = Modifier.fillMaxSize(), userScrollEnabled = canScroll,
+            key = { itemState.value.getOrNull(it)?.key ?: "pending:$it" },
+        ) { content(it) }
+    } else {
+        HorizontalPager(
+            state = pagerState, modifier = Modifier.fillMaxSize(), userScrollEnabled = canScroll,
+            reverseLayout = readerPagerReverseLayout(mode, rtl), key = { itemState.value.getOrNull(it)?.key ?: "pending:$it" },
+        ) { content(it) }
+    }
+}
+
+@Composable
+private fun ReaderZoomablePage(
+    onToggleControls: () -> Unit,
+    onZoomChanged: (Boolean) -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var scale by remember { mutableFloatStateOf(READER_MIN_ZOOM) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    var viewportSize by remember { mutableStateOf(IntSize.Zero) }
+    var zoomAnimation by remember { mutableStateOf<Job?>(null) }
+    DisposableEffect(Unit) {
+        onDispose { zoomAnimation?.cancel() }
+    }
+
+    fun animateZoom(targetScale: Float, focus: Offset) {
+        zoomAnimation?.cancel()
+        val startScale = scale
+        val startOffset = offset
+        val targetOffset = if (!isReaderZoomed(targetScale)) {
+            Offset.Zero
+        } else {
+            readerZoomOffsetAfterGesture(
+                currentOffset = ReaderZoomOffset(startOffset.x, startOffset.y),
+                currentScale = startScale,
+                requestedScale = targetScale,
+                focusX = focus.x,
+                focusY = focus.y,
+                viewportWidth = viewportSize.width.toFloat(),
+                viewportHeight = viewportSize.height.toFloat(),
+            ).offset.toOffset()
+        }
+        zoomAnimation = coroutineScope.launch {
+            animate(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = tween(READER_DOUBLE_TAP_ANIMATION_MILLIS),
+            ) { progress, _ ->
+                scale = startScale + (targetScale - startScale) * progress
+                offset = Offset(
+                    x = startOffset.x + (targetOffset.x - startOffset.x) * progress,
+                    y = startOffset.y + (targetOffset.y - startOffset.y) * progress,
                 )
             }
+        }
+    }
+
+    val zoomed = isReaderZoomed(scale)
+    LaunchedEffect(zoomed) { onZoomChanged(zoomed) }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clipToBounds()
+            .onSizeChanged { size ->
+                viewportSize = size
+                offset = constrainReaderZoomOffset(
+                    offset = ReaderZoomOffset(offset.x, offset.y),
+                    scale = scale,
+                    viewportWidth = size.width.toFloat(),
+                    viewportHeight = size.height.toFloat(),
+                ).toOffset()
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { onToggleControls() },
+                    onDoubleTap = { position ->
+                        animateZoom(
+                            targetScale = if (isReaderZoomed(scale)) {
+                                READER_MIN_ZOOM
+                            } else {
+                                READER_DOUBLE_TAP_ZOOM
+                            },
+                            focus = position,
+                        )
+                    },
+                )
+            }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    var transforming = false
+                    do {
+                        val event = awaitPointerEvent()
+                        val pressedPointers = event.changes.count { it.pressed }
+                        if (pressedPointers > 0 && (pressedPointers >= 2 || transforming)) {
+                            transforming = true
+                            zoomAnimation?.cancel()
+                            val centroid = event.calculateCentroid()
+                            val pan = event.calculatePan()
+                            val next = readerZoomOffsetAfterGesture(
+                                currentOffset = ReaderZoomOffset(offset.x, offset.y),
+                                currentScale = scale,
+                                requestedScale = scale * event.calculateZoom(),
+                                focusX = centroid.x,
+                                focusY = centroid.y,
+                                viewportWidth = viewportSize.width.toFloat(),
+                                viewportHeight = viewportSize.height.toFloat(),
+                                panX = pan.x,
+                                panY = pan.y,
+                            )
+                            scale = next.scale
+                            offset = next.offset.toOffset()
+                            event.changes.forEach { it.consume() }
+                        } else if (pressedPointers == 1 && isReaderZoomed(scale)) {
+                            zoomAnimation?.cancel()
+                            val pan = event.calculatePan()
+                            val nextOffset = constrainReaderZoomOffset(
+                                offset = ReaderZoomOffset(offset.x + pan.x, offset.y + pan.y),
+                                scale = scale,
+                                viewportWidth = viewportSize.width.toFloat(),
+                                viewportHeight = viewportSize.height.toFloat(),
+                            )
+                            offset = nextOffset.toOffset()
+                            event.changes.forEach { it.consume() }
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            },
+    ) {
+        Box(Modifier.fillMaxSize().graphicsLayer {
+            scaleX = scale; scaleY = scale
+            translationX = offset.x; translationY = offset.y
+        }) { content() }
+    }
+}
+
+@Composable
+private fun ReaderChapterBoundary(
+    item: ReaderWindowItem,
+    chapters: List<AlbumChapter>,
+    onRetry: () -> Unit,
+    onSkip: (() -> Unit)?,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+    ) {
+        when (item) {
+            ReaderWindowItem.End -> Text("已读完全部章节", style = MiuixTheme.textStyles.body2)
+            is ReaderWindowItem.Boundary -> {
+                val chapter = chapters[item.chapterIndex].displayName(item.chapterIndex)
+                Text(chapter, style = MiuixTheme.textStyles.body2, fontWeight = FontWeight.SemiBold)
+                when (val state = item.state) {
+                    is ReaderChapterState.Error -> {
+                        Text(state.message, style = MiuixTheme.textStyles.footnote1, textAlign = TextAlign.Center)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(text = "重试", onClick = onRetry)
+                            if (onSkip != null) TextButton(text = "跳至已下载章节", onClick = onSkip)
+                        }
+                    }
+                    else -> CircularProgressIndicator(size = 24.dp)
+                }
+            }
+            else -> Unit
         }
     }
 }
@@ -1261,6 +1566,10 @@ private fun ReaderPageImage(
     viewportWidthPx: Int,
     retryKey: Int,
     knownError: String?,
+    paged: Boolean = false,
+    autoBackground: Boolean = false,
+    edgeColors: ReaderEdgeColors? = null,
+    onEdgeColors: (ReaderEdgeColors) -> Unit = {},
     onError: (String) -> Unit,
     onLoaded: (Int, Int) -> Unit,
     onRetry: () -> Unit,
@@ -1269,12 +1578,39 @@ private fun ReaderPageImage(
     val request = remember(page, retryKey, viewportWidthPx) {
         buildReaderImageRequest(context, page, retryKey, viewportWidthPx)
     }
+    var loadedImage by remember(page.cacheKey, retryKey, viewportWidthPx) { mutableStateOf<Image?>(null) }
+    val latestOnEdgeColors by rememberUpdatedState(onEdgeColors)
+    LaunchedEffect(request, loadedImage, autoBackground) {
+        val displayed = loadedImage ?: return@LaunchedEffect
+        if (!autoBackground || edgeColors != null) return@LaunchedEffect
+        val colors = withContext(Dispatchers.IO) {
+            try {
+                var bitmap = (displayed as? BitmapImage)?.bitmap
+                if (bitmap == null || bitmap.config == Bitmap.Config.HARDWARE) {
+                    // 同一还原/本地文件管线，单独的小软件缓存；不为取色额外访问网络。
+                    val ratio = displayed.height.toFloat() / displayed.width.coerceAtLeast(1)
+                    val width = minOf(256f, 1024f / ratio.coerceAtLeast(.01f)).roundToInt().coerceAtLeast(1)
+                    val small = request.newBuilder().allowHardware(false)
+                        .size(width, (width * ratio).roundToInt().coerceAtLeast(1))
+                        .memoryCacheKey("${page.cacheKey}:edge-colors:$READER_RESTORE_VERSION:$retryKey")
+                        .networkCachePolicy(CachePolicy.DISABLED).build()
+                    bitmap = ((context.imageLoader.execute(small) as? SuccessResult)?.image as? BitmapImage)?.bitmap
+                }
+                bitmap?.takeIf { it.config != Bitmap.Config.HARDWARE && !it.isRecycled }?.let { image ->
+                    readerEdgeColors(image.width, image.height, image::getPixel)
+                } ?: ReaderEdgeColors(null, null)
+            } catch (error: CancellationException) { throw error }
+            catch (_: Exception) { ReaderEdgeColors(null, null) }
+        }
+        latestOnEdgeColors(colors)
+    }
     if (knownError != null) {
         ReaderPageError(
             pageNumber = page.index + 1,
             aspect = aspect,
             message = knownError,
             onRetry = onRetry,
+            paged = paged,
         )
         return
     }
@@ -1288,21 +1624,32 @@ private fun ReaderPageImage(
     }
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f / aspect)
+            .then(if (paged) Modifier.fillMaxSize() else Modifier.fillMaxWidth().aspectRatio(1f / aspect))
             .clipToBounds()
             // 占位色与页面背景一致：估算有偏差时露出来的那几像素不会是一条灰边。
-            .background(MiuixTheme.colorScheme.surface),
+            .background(MiuixTheme.colorScheme.surface)
+            .then(if (autoBackground && edgeColors != null) {
+                val fallback = MiuixTheme.colorScheme.surface
+                val top = edgeColors.top?.let { Color(it) } ?: fallback
+                val bottom = edgeColors.bottom?.let { Color(it) } ?: fallback
+                Modifier.drawBehind {
+                    val imageHeight = minOf(size.height, size.width * aspect)
+                    val start = (size.height - imageHeight) / 2f
+                    // Clamp 延伸到空白区，渐变仅位于 Fit 图片所在的高度范围。
+                    drawRect(Brush.verticalGradient(listOf(top, bottom), startY = start, endY = start + imageHeight.coerceAtLeast(1f)))
+                }
+            } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         AsyncImage(
             model = request,
             contentDescription = "第 ${page.index + 1} 页",
-            modifier = Modifier.fillMaxWidth(),
-            contentScale = ContentScale.FillWidth,
-            alignment = Alignment.TopCenter,
+            modifier = if (paged) Modifier.fillMaxSize() else Modifier.fillMaxWidth(),
+            contentScale = if (paged) ContentScale.Fit else ContentScale.FillWidth,
+            alignment = if (paged) Alignment.Center else Alignment.TopCenter,
             onSuccess = { state ->
                 loading = false
+                loadedImage = state.result.image
                 onLoaded(state.result.image.width, state.result.image.height)
             },
             onError = { state ->
@@ -1334,11 +1681,10 @@ private fun ReaderPageSpinner(pageNumber: Int) {
 }
 
 @Composable
-private fun ReaderPageError(pageNumber: Int, aspect: Float, message: String, onRetry: () -> Unit) {
+private fun ReaderPageError(pageNumber: Int, aspect: Float, message: String, onRetry: () -> Unit, paged: Boolean = false) {
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f / aspect)
+            .then(if (paged) Modifier.fillMaxSize() else Modifier.fillMaxWidth().aspectRatio(1f / aspect))
             .background(MiuixTheme.colorScheme.errorContainer)
             .clickable(onClick = onRetry)
             .padding(horizontal = 28.dp),
@@ -1370,169 +1716,37 @@ private fun ReaderPageError(pageNumber: Int, aspect: Float, message: String, onR
     }
 }
 
+/** 两个阅读面板共用 miuix sheet 的手势与转场，外层留出安全区和悬浮圆角。 */
 @Composable
-private fun ReaderTopBar(
-    chapter: AlbumChapter,
-    chapterIndex: Int,
-    chapterCount: Int,
-    source: ReaderResourceSource,
-    onBack: () -> Unit,
-    backdrop: LayerBackdrop?,
+private fun ReaderSheet(
+    show: Boolean,
+    title: String,
+    onDismiss: () -> Unit,
+    content: @Composable () -> Unit,
 ) {
-    Surface(color = MiuixTheme.colorScheme.background) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 8.dp, top = 36.dp, end = 16.dp, bottom = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            LiquidGlassIconButton(onClick = onBack, backdrop = backdrop, glassAlpha = rememberTopBarGlassProgress().value) {
-                Icon(
-                    imageVector = MiuixIcons.Back,
-                    contentDescription = "返回详情",
-                    tint = MiuixTheme.colorScheme.onBackground,
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = when (source) {
-                        ReaderResourceSource.OnlineJm -> "第 ${chapterIndex + 1} / $chapterCount 话"
-                        is ReaderResourceSource.Offline -> "离线 · 第 ${chapterIndex + 1} / $chapterCount 话"
-                    },
-                    style = MiuixTheme.textStyles.body2,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MiuixTheme.colorScheme.onBackground,
-                )
-                Text(
-                    text = chapter.displayName(chapterIndex),
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReaderControlPanel(
-    currentPageIndex: Int,
-    totalPages: Int,
-    sliderDraft: Float?,
-    onSliderChange: (Float) -> Unit,
-    onSliderFinished: () -> Unit,
-    canPreviousChapter: Boolean,
-    canNextChapter: Boolean,
-    failedPage: Int?,
-    onPreviousChapter: () -> Unit,
-    onNextChapter: () -> Unit,
-    onShowCatalog: () -> Unit,
-    onShowSettings: () -> Unit,
-) {
-    val safeTotal = totalPages.coerceAtLeast(1)
-    val sliderEnd = (safeTotal - 1).toFloat().coerceAtLeast(1f)
-    val displayedPage = readerPageFromSlider(sliderDraft ?: currentPageIndex.toFloat(), safeTotal) + 1
-    Surface(color = MiuixTheme.colorScheme.surfaceContainer) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+    OverlayBottomSheet(
+        show = show,
+        title = title,
+        modifier = Modifier
+            .padding(horizontal = 12.dp)
+            .navigationBarsPadding()
+            .padding(bottom = 8.dp)
+            .clip(RoundedCornerShape(32.dp)),
+        sheetMaxWidth = 560.dp,
+        cornerRadius = 32.dp,
+        insideMargin = DpSize(16.dp, 16.dp),
+        endAction = {
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.size(40.dp),
+                backgroundColor = MiuixTheme.colorScheme.surfaceContainerHigh,
             ) {
-                Text(
-                    text = if (totalPages > 0) "$displayedPage / $totalPages" else "正在加载章节",
-                    style = MiuixTheme.textStyles.body2,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MiuixTheme.colorScheme.onSurfaceContainer,
-                )
-                Text(
-                    text = if (totalPages > 0) "${displayedPage * 100 / totalPages}%" else "",
-                    style = MiuixTheme.textStyles.footnote1,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                )
+                Icon(MiuixIcons.Close, contentDescription = "关闭$title", modifier = Modifier.size(18.dp))
             }
-            if (totalPages > 0) {
-                Slider(
-                    value = (sliderDraft ?: currentPageIndex.toFloat()).coerceIn(0f, sliderEnd),
-                    onValueChange = onSliderChange,
-                    onValueChangeFinished = onSliderFinished,
-                    enabled = totalPages > 1,
-                    valueRange = 0f..sliderEnd,
-                    steps = (safeTotal - 2).coerceAtLeast(0),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            } else {
-                Spacer(modifier = Modifier.height(28.dp))
-            }
-            if (failedPage != null) {
-                Text(
-                    text = "第 ${failedPage + 1} 页加载失败，可在原位置点击重试",
-                    style = MiuixTheme.textStyles.footnote2,
-                    color = MiuixTheme.colorScheme.error,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceAround,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ReaderIconButton(
-                    icon = MiuixIcons.ChevronForward,
-                    description = "上一话",
-                    enabled = canPreviousChapter,
-                    mirrorHorizontally = true,
-                    onClick = onPreviousChapter,
-                )
-                ReaderIconButton(
-                    icon = MiuixIcons.ListView,
-                    description = "选择章节",
-                    enabled = true,
-                    onClick = onShowCatalog,
-                )
-                ReaderIconButton(
-                    icon = MiuixIcons.ChevronForward,
-                    description = "下一话",
-                    enabled = canNextChapter,
-                    onClick = onNextChapter,
-                )
-                ReaderIconButton(
-                    icon = MiuixIcons.Settings,
-                    description = "阅读设置",
-                    enabled = true,
-                    onClick = onShowSettings,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReaderIconButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    description: String,
-    enabled: Boolean,
-    mirrorHorizontally: Boolean = false,
-    onClick: () -> Unit,
-) {
-    IconButton(onClick = onClick, enabled = enabled) {
-        Icon(
-            imageVector = icon,
-            contentDescription = description,
-            modifier = Modifier.graphicsLayer { scaleX = if (mirrorHorizontally) -1f else 1f },
-            tint = if (enabled) {
-                MiuixTheme.colorScheme.onSurface
-            } else {
-                MiuixTheme.colorScheme.disabledOnSurface
-            },
-        )
-    }
+        },
+        onDismissRequest = onDismiss,
+        content = content,
+    )
 }
 
 @Composable
@@ -1544,46 +1758,136 @@ private fun ReaderCatalogSheet(
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    OverlayBottomSheet(
-        show = show,
-        title = if (availableChapterIds == null) "选择章节" else "离线目录 · 仅已下载章节可读",
-        onDismissRequest = onDismiss,
+    val currentIndex = selectedChapterIndex.coerceIn(0, (chapters.size - 1).coerceAtLeast(0))
+    val catalogState = rememberLazyListState(initialFirstVisibleItemIndex = currentIndex)
+    val scope = rememberCoroutineScope()
+    val listMaxHeight = (LocalWindowInfo.current.containerDpSize.height * 0.55f).coerceAtMost(520.dp)
+    // 每次打开都回到当前话；目录自行滚动时不会被这个 effect 拉回去。
+    LaunchedEffect(show, currentIndex, chapters.size) {
+        if (show && chapters.isNotEmpty()) catalogState.scrollToItem(currentIndex)
+    }
+    ReaderSheet(show = show, title = "章节目录", onDismiss = onDismiss) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(
+                        text = "共 ${chapters.size} 话",
+                        style = MiuixTheme.textStyles.footnote1,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = if (availableChapterIds == null) {
+                            "当前阅读 · 第 ${currentIndex + 1} 话"
+                        } else {
+                            "离线目录 · 仅已下载章节可读"
+                        },
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        maxLines = 2,
+                    )
+                }
+                TextButton(
+                    text = "定位当前章节",
+                    onClick = { scope.launch { catalogState.animateScrollToItem(currentIndex) } },
+                    enabled = chapters.isNotEmpty(),
+                    minHeight = 44.dp,
+                    cornerRadius = 22.dp,
+                    insideMargin = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    textStyle = MiuixTheme.textStyles.footnote1,
+                    colors = ButtonDefaults.textButtonColors(
+                        color = MiuixTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        textColor = MiuixTheme.colorScheme.primary,
+                    ),
+                )
+            }
+            LazyColumn(
+                state = catalogState,
+                modifier = Modifier.heightIn(max = listMaxHeight),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                contentPadding = PaddingValues(vertical = 4.dp),
+            ) {
+                itemsIndexed(items = chapters, key = { _, chapter -> chapter.id }) { index, chapter ->
+                    ReaderCatalogChapter(
+                        chapter = chapter,
+                        index = index,
+                        selected = index == currentIndex,
+                        available = availableChapterIds == null || chapter.id in availableChapterIds,
+                        offline = availableChapterIds != null,
+                        onClick = { onSelect(index) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderCatalogChapter(
+    chapter: AlbumChapter,
+    index: Int,
+    selected: Boolean,
+    available: Boolean,
+    offline: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = MiuixTheme.colorScheme
+    Surface(
+        onClick = onClick,
+        enabled = available,
+        shape = RoundedCornerShape(18.dp),
+        color = if (selected) colors.primary.copy(alpha = 0.1f) else colors.surfaceContainer,
+        modifier = Modifier.fillMaxWidth().semantics { this.selected = selected },
     ) {
-        LazyColumn(modifier = Modifier.heightIn(max = 560.dp)) {
-            itemsIndexed(
-                items = chapters,
-                key = { _, chapter -> chapter.id },
-            ) { index, chapter ->
-                BasicComponent(
-                    title = chapter.displayName(index),
-                    summary = when {
-                        availableChapterIds == null -> "JM${chapter.id}"
-                        chapter.id in availableChapterIds -> "JM${chapter.id} · 已下载"
-                        else -> "JM${chapter.id} · 未完整下载或文件缺失"
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = (index + 1).toString().padStart(2, '0'),
+                modifier = Modifier.widthIn(min = 28.dp),
+                style = MiuixTheme.textStyles.footnote1.copy(fontFeatureSettings = "tnum"),
+                fontWeight = FontWeight.SemiBold,
+                color = when {
+                    !available -> colors.disabledOnSurface
+                    selected -> colors.primary
+                    else -> colors.onSurfaceVariantSummary
+                },
+            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = chapter.displayName(index),
+                    style = MiuixTheme.textStyles.body2,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    color = when {
+                        !available -> colors.disabledOnSurface
+                        selected -> colors.primary
+                        else -> colors.onSurface
                     },
-                    enabled = availableChapterIds == null || chapter.id in availableChapterIds,
-                    onClick = { onSelect(index) },
-                    startAction = {
-                        Icon(
-                            imageVector = MiuixIcons.ListView,
-                            contentDescription = null,
-                            modifier = Modifier.padding(end = 14.dp),
-                            tint = if (index == selectedChapterIndex) {
-                                MiuixTheme.colorScheme.primary
-                            } else {
-                                MiuixTheme.colorScheme.onSurfaceVariantSummary
-                            },
-                        )
-                    },
-                    endActions = {
-                        if (index == selectedChapterIndex) {
-                            Text(
-                                text = "当前",
-                                style = MiuixTheme.textStyles.footnote1,
-                                color = MiuixTheme.colorScheme.primary,
-                            )
-                        }
-                    },
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (offline) {
+                    Text(
+                        text = if (available) "已下载" else "未下载或文件缺失",
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = if (available) colors.onSurfaceVariantSummary else colors.disabledOnSurface,
+                    )
+                }
+            }
+            if (selected) {
+                Text(
+                    text = "正在阅读",
+                    modifier = Modifier
+                        .background(colors.primary.copy(alpha = 0.1f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 9.dp, vertical = 5.dp),
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = colors.primary,
+                    maxLines = 1,
                 )
             }
         }
@@ -1597,66 +1901,114 @@ private fun ReaderSettingsSheet(
     onSettingsChange: (ReaderSettings) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var statusOptionsExpanded by rememberSaveable { mutableStateOf(false) }
-    OverlayBottomSheet(
-        show = show,
-        title = "阅读设置",
-        onDismissRequest = onDismiss,
-    ) {
-        Column {
-            SwitchPreference(
-                title = "音量键翻页",
-                summary = "音量上键上一页，音量下键下一页",
-                checked = settings.volumeKeyPaging,
-                onCheckedChange = { onSettingsChange(settings.copy(volumeKeyPaging = it)) },
-                startAction = {
-                    Icon(
-                        imageVector = MiuixIcons.VolumeUp,
-                        contentDescription = null,
-                        modifier = Modifier.padding(end = 14.dp),
-                        tint = MiuixTheme.colorScheme.onSurface,
-                    )
-                },
-            )
-            SwitchPreference(
-                title = "持续阅读",
-                summary = "在章首或章末继续拉动，松手切换上一话／下一话",
-                checked = settings.continuousChapterFlip,
-                onCheckedChange = { onSettingsChange(settings.copy(continuousChapterFlip = it)) },
-            )
-            BasicComponent(
-                title = "沉浸阅读时状态显示",
-                summary = "选择隐藏操作栏后仍保留的信息",
-                onClick = { statusOptionsExpanded = !statusOptionsExpanded },
-                endActions = {
-                    Icon(
-                        imageVector = MiuixIcons.ChevronForward,
-                        contentDescription = if (statusOptionsExpanded) "收起" else "展开",
-                        modifier = Modifier.graphicsLayer {
-                            rotationZ = if (statusOptionsExpanded) 90f else 0f
-                        },
-                        tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                    )
-                },
-            )
-            AnimatedVisibility(visible = statusOptionsExpanded) {
-                Column(modifier = Modifier.padding(start = 24.dp)) {
+    val maxHeight = (LocalWindowInfo.current.containerDpSize.height * 0.6f).coerceAtMost(600.dp)
+    ReaderSheet(show = show, title = "阅读设置", onDismiss = onDismiss) {
+        Column(
+            modifier = Modifier.heightIn(max = maxHeight).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            ReaderSettingsGroup(title = "翻页方式") {
+                WindowDropdownPreference(
+                    title = "阅读模式", summary = settings.mode.summary,
+                    items = ReaderMode.entries.map { it.label }, selectedIndex = settings.mode.ordinal,
+                    onSelectedIndexChange = { index -> ReaderMode.entries.getOrNull(index)?.let { onSettingsChange(settings.copy(mode = it)) } },
+                    insideMargin = PaddingValues(horizontal = 16.dp, vertical = 13.dp),
+                )
+                ReaderSettingsDivider()
+                SwitchPreference(
+                    title = "连续章节", summary = "读到章末自动衔接下一章",
+                    checked = settings.seamlessChapters,
+                    onCheckedChange = { onSettingsChange(settings.copy(seamlessChapters = it)) },
+                    insideMargin = PaddingValues(horizontal = 16.dp, vertical = 13.dp),
+                )
+                ReaderSettingsDivider()
+                SwitchPreference(
+                    title = "音量键翻页",
+                    summary = "音量上键上一页，下键下一页",
+                    checked = settings.volumeKeyPaging,
+                    onCheckedChange = { onSettingsChange(settings.copy(volumeKeyPaging = it)) },
+                    insideMargin = PaddingValues(horizontal = 16.dp, vertical = 13.dp),
+                )
+                if (settings.mode == ReaderMode.WEBTOON && !settings.seamlessChapters) {
+                    ReaderSettingsDivider()
                     SwitchPreference(
-                        title = "电量、充放电状态与时间",
-                        summary = "显示在右上角",
-                        checked = settings.showBatteryTime,
-                        onCheckedChange = { onSettingsChange(settings.copy(showBatteryTime = it)) },
-                    )
-                    SwitchPreference(
-                        title = "当前话页码",
-                        summary = "以 当前页/总页数 显示在右下角",
-                        checked = settings.showPageNumber,
-                        onCheckedChange = { onSettingsChange(settings.copy(showPageNumber = it)) },
+                        title = "章末拉动换章",
+                        summary = "在章首或章末继续拉动，松手换章",
+                        checked = settings.continuousChapterFlip,
+                        onCheckedChange = { onSettingsChange(settings.copy(continuousChapterFlip = it)) },
+                        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 13.dp),
                     )
                 }
             }
+            if (settings.mode == ReaderMode.LEFT_TO_RIGHT || settings.mode == ReaderMode.RIGHT_TO_LEFT) {
+                ReaderSettingsGroup(title = "页面显示") {
+                    WindowDropdownPreference(
+                        title = "合并相邻页", summary = "宽幅图片单独显示",
+                        items = ReaderDoublePageMode.entries.map { it.label }, selectedIndex = settings.doublePageMode.ordinal,
+                        onSelectedIndexChange = { index -> ReaderDoublePageMode.entries.getOrNull(index)?.let { onSettingsChange(settings.copy(doublePageMode = it)) } },
+                        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 13.dp),
+                    )
+                    if (settings.doublePageMode != ReaderDoublePageMode.OFF) {
+                        ReaderSettingsDivider()
+                        SwitchPreference(title = "章节首页单独显示", summary = "保留封面的完整展示",
+                            checked = settings.coverSingle, onCheckedChange = { onSettingsChange(settings.copy(coverSingle = it)) },
+                            insideMargin = PaddingValues(horizontal = 16.dp, vertical = 13.dp))
+                    }
+                    ReaderSettingsDivider()
+                    SwitchPreference(title = "自动填充背景", summary = "分别沿用图片顶部与底部的颜色",
+                        checked = settings.autoPageBackground, onCheckedChange = { onSettingsChange(settings.copy(autoPageBackground = it)) },
+                        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 13.dp))
+                }
+            }
+            ReaderSettingsGroup(title = "沉浸显示", summary = "隐藏操作栏后保留的信息") {
+                SwitchPreference(
+                    title = "时间与电量",
+                    summary = "显示在右上角",
+                    checked = settings.showBatteryTime,
+                    onCheckedChange = { onSettingsChange(settings.copy(showBatteryTime = it)) },
+                    insideMargin = PaddingValues(horizontal = 16.dp, vertical = 13.dp),
+                )
+                ReaderSettingsDivider()
+                SwitchPreference(
+                    title = "页码",
+                    summary = "显示在右下角",
+                    checked = settings.showPageNumber,
+                    onCheckedChange = { onSettingsChange(settings.copy(showPageNumber = it)) },
+                    insideMargin = PaddingValues(horizontal = 16.dp, vertical = 13.dp),
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun ReaderSettingsGroup(
+    title: String,
+    summary: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                text = title,
+                style = MiuixTheme.textStyles.footnote1,
+                fontWeight = FontWeight.Medium,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+            if (summary != null) {
+                Text(text = summary, style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+            }
+        }
+        Card(cornerRadius = 22.dp, insideMargin = PaddingValues(0.dp), content = content)
+    }
+}
+
+@Composable
+private fun ReaderSettingsDivider() {
+    Box(
+        Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(0.5.dp)
+            .background(MiuixTheme.colorScheme.dividerLine.copy(alpha = 0.5f)),
+    )
 }
 
 @Composable
@@ -1764,6 +2116,7 @@ internal class ComicReaderRepository(
      */
     private val chapterCache = LinkedHashMap<String, ReaderChapterState.Content>()
     private val chapterCacheLock = Any()
+    private val chapterLoadLocks = ConcurrentHashMap<String, Mutex>()
 
     /**
      * 载入一话。
@@ -1775,7 +2128,7 @@ internal class ComicReaderRepository(
     suspend fun loadChapter(
         chapterId: String,
         imageHostHint: String?,
-    ): ReaderChapterState {
+    ): ReaderChapterState = chapterLoadLocks.getOrPut(chapterId) { Mutex() }.withLock {
         cachedChapter(chapterId)?.let { return it }
         return withContext(Dispatchers.IO) {
             try {
@@ -2155,25 +2508,6 @@ internal fun readerPageFromSlider(value: Float, totalPages: Int): Int {
     return value.roundToInt().coerceIn(0, totalPages - 1)
 }
 
-/**
- * 落位到目标页，并在随后一两帧里确认落点。
- *
- * 目标页首次被组合的那一次测量（`scrollToItem` 内部的 `forceRemeasure()` 就发生在那里）
- * 未必量得到真实高度，LazyColumn 会因为填不满视口而把落点往回拉，见 ReaderPageImage 的说明。
- * [ReaderPageImage] 已经用占位高度堵住了这个洞，这里只作为兜底再确认一次。
- *
- * 次数刻意压得很小：真到了章节末尾余量不足时，落点本就该被夹住，不该无限纠正。
- * 用户此时若已开始拖动列表，[LazyListState.scrollToItem] 会被优先级更高的手势抢掉滚动权
- * 并抛出取消，这个循环随之安静结束。
- */
-private suspend fun LazyListState.scrollToReaderPage(target: Int) {
-    scrollToItem(target)
-    repeat(READER_JUMP_SETTLE_ATTEMPTS) {
-        withFrameNanos { }
-        if (firstVisibleItemIndex == target) return
-        scrollToItem(target)
-    }
-}
 
 internal fun isReaderZoomed(scale: Float): Boolean =
     scale > READER_MIN_ZOOM + READER_ZOOM_EPSILON
@@ -2252,6 +2586,11 @@ internal object ReaderVolumeKeyDispatcher {
 }
 
 private data class ReaderSettings(
+    val mode: ReaderMode = ReaderMode.WEBTOON,
+    val doublePageMode: ReaderDoublePageMode = ReaderDoublePageMode.AUTO,
+    val coverSingle: Boolean = true,
+    val autoPageBackground: Boolean = true,
+    val seamlessChapters: Boolean = false,
     val volumeKeyPaging: Boolean = false,
     val showBatteryTime: Boolean = true,
     val showPageNumber: Boolean = true,
@@ -2266,6 +2605,11 @@ private class ReaderSettingsStore(context: Context) {
 
     fun load(): ReaderSettings {
         return ReaderSettings(
+            mode = ReaderMode.fromPreference(preferences.getString("reader_mode", null)),
+            doublePageMode = ReaderDoublePageMode.fromPreference(preferences.getString("double_page_mode", null)),
+            coverSingle = preferences.getBoolean("cover_single", true),
+            autoPageBackground = preferences.getBoolean("auto_page_background", true),
+            seamlessChapters = preferences.getBoolean("seamless_chapters", false),
             volumeKeyPaging = preferences.getBoolean(READER_VOLUME_KEYS, false),
             showBatteryTime = preferences.getBoolean(READER_BATTERY_TIME, true),
             showPageNumber = preferences.getBoolean(READER_PAGE_NUMBER, true),
@@ -2275,6 +2619,11 @@ private class ReaderSettingsStore(context: Context) {
 
     fun save(settings: ReaderSettings) {
         preferences.edit {
+            putString("reader_mode", settings.mode.name)
+            putString("double_page_mode", settings.doublePageMode.name)
+            putBoolean("cover_single", settings.coverSingle)
+            putBoolean("auto_page_background", settings.autoPageBackground)
+            putBoolean("seamless_chapters", settings.seamlessChapters)
             putBoolean(READER_VOLUME_KEYS, settings.volumeKeyPaging)
             putBoolean(READER_BATTERY_TIME, settings.showBatteryTime)
             putBoolean(READER_PAGE_NUMBER, settings.showPageNumber)
@@ -2291,10 +2640,6 @@ internal enum class ReaderChapterLanding {
     /** 最后一页——上拉回看上一话时的落点。 */
     LAST,
 }
-
-/** 视口宽度（像素）。解码与内存缓存键都按它算。 */
-private fun readerViewportWidthPx(context: Context): Int =
-    context.resources.displayMetrics.widthPixels.coerceAtLeast(READER_MIN_VIEWPORT_WIDTH_PX)
 
 /** 高宽比转成千分数存：一页只占四五个字符，一话四百页也就两千字节。 */
 internal fun readerHeightPermille(width: Int, height: Int): Int {
@@ -2416,6 +2761,8 @@ private class ReaderPageGeometryState(initial: List<Int>) {
         estimatePermille = estimatedPermille,
         fallback = READER_DEFAULT_PAGE_ASPECT,
     )
+
+    fun knownAspectOf(index: Int): Float? = permille.getOrNull(index)?.takeIf { it > 0 }?.div(1000f)
 
     /** 本章当前的整体估算，供预取按单页字节数算窗口深度。 */
     fun estimatedAspect(): Float = readerPageAspect(0, estimatedPermille, READER_DEFAULT_PAGE_ASPECT)
@@ -2543,15 +2890,14 @@ private class ReaderPrefetchController(
     context: Context,
     private val imageLoader: ImageLoader,
     private val scope: CoroutineScope,
+    private val onDecoded: (ReaderPage, Int, Int) -> Unit,
 ) {
     private val applicationContext = context.applicationContext
     private val semaphore = Semaphore(READER_PREFETCH_CONCURRENCY)
-    private val inFlight = mutableMapOf<Int, Job>()
-    private val succeeded = mutableSetOf<Int>()
-    private var chapterKey: String? = null
+    private val inFlight = mutableMapOf<String, Job>()
+    private val succeeded = mutableSetOf<String>()
 
     fun update(
-        chapterId: String,
         pages: List<ReaderPage>,
         center: Int,
         forward: Boolean,
@@ -2573,25 +2919,24 @@ private class ReaderPrefetchController(
             forward = forward,
             pageCount = pages.size,
         )
+        val resources = window.map { pages[it] }.associateBy { it.cacheKey }
+        val retained = pages.mapTo(hashSetOf()) { it.cacheKey }
         val launching = synchronized(this) {
-            if (chapterKey != chapterId) {
-                chapterKey = chapterId
-                cancelAllLocked()
-            }
+            succeeded.retainAll(retained)
             inFlight.entries.removeAll { (index, job) ->
-                if (index in window) {
+                if (index in resources) {
                     false
                 } else {
                     job.cancel()
                     true
                 }
             }
-            window.filter { it !in succeeded && it !in inFlight.keys }
+            resources.filterKeys { it !in succeeded && it !in inFlight.keys }.values.toList()
         }
-        launching.forEach { index -> launch(pages[index], index, viewportWidthPx) }
+        launching.forEach { page -> launch(page, page.cacheKey, viewportWidthPx) }
     }
 
-    fun markSucceeded(index: Int) {
+    fun markSucceeded(index: String) {
         synchronized(this) { succeeded.add(index) }
     }
 
@@ -2599,7 +2944,6 @@ private class ReaderPrefetchController(
         synchronized(this) {
             cancelAllLocked()
             succeeded.clear()
-            chapterKey = null
         }
     }
 
@@ -2609,7 +2953,7 @@ private class ReaderPrefetchController(
         succeeded.clear()
     }
 
-    private fun launch(page: ReaderPage, index: Int, viewportWidthPx: Int) {
+    private fun launch(page: ReaderPage, index: String, viewportWidthPx: Int) {
         val job = scope.launch {
             semaphore.withPermit {
                 val result = try {
@@ -2627,7 +2971,10 @@ private class ReaderPrefetchController(
                     null
                 }
                 // 失败的页不记成功：留在窗口里，下一次 update 会再试一次。
-                if (result is SuccessResult) markSucceeded(index)
+                if (result is SuccessResult) {
+                    markSucceeded(index)
+                    onDecoded(page, result.image.width, result.image.height)
+                }
             }
         }
         val replaced = synchronized(this) {
@@ -2832,8 +3179,6 @@ private const val READER_FLIP_DRAG_RESISTANCE = 0.55f
 /** 有效触摸事件的最小位移，过滤浮点噪声但不制造额外回滚距离。 */
 private const val READER_FLIP_REVERSE_MIN_DELTA_PX = 0.5f
 
-/** 跳页后重新落位的确认次数，见 scrollToPage。 */
-private const val READER_JUMP_SETTLE_ATTEMPTS = 2
 private const val READER_MIN_ZOOM = 1f
 private const val READER_MAX_ZOOM = 4f
 private const val READER_DOUBLE_TAP_ZOOM = 2.5f

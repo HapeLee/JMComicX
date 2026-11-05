@@ -1,7 +1,17 @@
 package dev.jmx.client.core.api
 
-import com.google.gson.JsonObject
-import com.google.gson.JsonElement
+import dev.jmx.client.core.json.WireJson
+import dev.jmx.client.core.json.parseWireElement
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 
 internal fun JsonObject.toAlbumSummary(): AlbumSummary {
     return AlbumSummary(
@@ -84,8 +94,8 @@ private fun JsonObject.toFavoriteFolderOrNull(): FavoriteFolder? {
 
 internal fun JsonElement.toAlbumPageOrNull(): AlbumPage? {
     return when {
-        isJsonObject -> asJsonObject.toAlbumPage()
-        isJsonArray -> AlbumPage(
+        this is JsonObject -> this.toAlbumPage()
+        this is JsonArray -> AlbumPage(
             total = null,
             content = asObjectListOrEmpty().map { it.toAlbumSummary() },
             raw = emptyMap()
@@ -106,8 +116,8 @@ internal fun JsonObject.toSearchPage(): SearchPage {
 
 internal fun JsonElement.toSearchPageOrNull(): SearchPage? {
     return when {
-        isJsonObject -> asJsonObject.toSearchPage()
-        isJsonArray -> SearchPage(
+        this is JsonObject -> this.toSearchPage()
+        this is JsonArray -> SearchPage(
             total = null,
             redirectAlbumId = null,
             content = asObjectListOrEmpty().map { it.toAlbumSummary() }
@@ -253,17 +263,17 @@ private fun JsonObject.pageArrList(): List<String> {
     val direct = get("page_arr") ?: get("images") ?: get("pageArr")
     when {
         direct == null -> Unit
-        direct.isJsonArray -> {
-            return direct.asJsonArray.mapNotNull { item ->
-                item.takeIf { it.isJsonPrimitive }?.let { runCatching { it.asString }.getOrNull() }
+        direct is JsonArray -> {
+            return direct.mapNotNull { item ->
+                item.takeIf { it is JsonPrimitive && it != JsonNull }?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
             }.filter { it.isNotBlank() }
         }
-        direct.isJsonPrimitive -> {
-            val text = runCatching { direct.asString }.getOrNull()?.trim().orEmpty()
+        direct is JsonPrimitive && direct != JsonNull -> {
+            val text = runCatching { direct.content }.getOrNull()?.trim().orEmpty()
             if (text.startsWith("[")) {
                 return runCatching {
-                    com.google.gson.JsonParser.parseString(text).asJsonArray.mapNotNull { item ->
-                        item.takeIf { it.isJsonPrimitive }?.let { runCatching { it.asString }.getOrNull() }
+                    WireJson.parseWireElement(text).jsonArray.mapNotNull { item ->
+                        item.takeIf { it is JsonPrimitive && it != JsonNull }?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
                     }.filter { it.isNotBlank() }
                 }.getOrDefault(emptyList())
             }
@@ -285,12 +295,12 @@ private fun JsonObject.toWeekTypeOrNull(): WeekType? {
 
 private fun JsonObject.recordList(): List<DailyRecord> {
     val record = get("record")
-        ?.takeIf { it.isJsonArray }
-        ?.asJsonArray
+        ?.takeIf { it is JsonArray }
+        ?.jsonArray
         ?: return emptyList()
     return record.flatMap { row ->
-        if (row.isJsonArray) {
-            row.asJsonArray.mapNotNull { it.asObjectOrNull()?.toDailyRecord() }
+        if (row is JsonArray) {
+            row.mapNotNull { it.asObjectOrNull()?.toDailyRecord() }
         } else {
             listOfNotNull(row.asObjectOrNull()?.toDailyRecord())
         }

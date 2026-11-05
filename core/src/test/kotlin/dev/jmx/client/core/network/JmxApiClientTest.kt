@@ -1,6 +1,5 @@
 package dev.jmx.client.core.network
 
-import kotlinx.coroutines.launch
 import dev.jmx.client.core.crypto.AesEcbPkcs7
 import dev.jmx.client.core.crypto.JmxHash
 import dev.jmx.client.core.protocol.ApiClock
@@ -9,6 +8,11 @@ import dev.jmx.client.core.protocol.ApiTokenProvider
 import dev.jmx.client.core.protocol.JmxProtocolConstants
 import dev.jmx.client.core.result.JmxError
 import dev.jmx.client.core.result.JmxResult
+import java.io.ByteArrayOutputStream
+import java.util.zip.GZIPOutputStream
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
@@ -18,8 +22,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.io.ByteArrayOutputStream
-import java.util.zip.GZIPOutputStream
 
 class JmxApiClientTest {
     private lateinit var server: MockWebServer
@@ -60,7 +62,7 @@ class JmxApiClientTest {
 
         assertTrue(result is JmxResult.Success)
         val value = (result as JmxResult.Success).value
-        assertEquals("demo", value.asJsonObject["name"].asString)
+        assertEquals("demo", value.jsonObject.getValue("name").jsonPrimitive.content)
         val recorded = server.takeRequest()
         assertEquals("/album?id=123", recorded.path)
         assertEquals("1700566805,${JmxProtocolConstants.DefaultApiVersion}", recorded.headers["tokenparam"])
@@ -100,7 +102,7 @@ class JmxApiClientTest {
         }
 
         assertTrue(result is JmxResult.Success)
-        assertEquals("gzip-demo", (result as JmxResult.Success).value.asJsonObject["name"].asString)
+        assertEquals("gzip-demo", (result as JmxResult.Success).value.jsonObject.getValue("name").jsonPrimitive.content)
     }
 
     @Test
@@ -159,7 +161,7 @@ class JmxApiClientTest {
         }
 
         assertTrue(result is JmxResult.Success)
-        assertEquals("plain", (result as JmxResult.Success).value.asJsonObject["name"].asString)
+        assertEquals("plain", (result as JmxResult.Success).value.jsonObject.getValue("name").jsonPrimitive.content)
     }
 
     @Test
@@ -220,7 +222,7 @@ class JmxApiClientTest {
         }
 
         assertTrue(result is JmxResult.Success)
-        assertEquals("fallback", (result as JmxResult.Success).value.asJsonObject["name"].asString)
+        assertEquals("fallback", (result as JmxResult.Success).value.jsonObject.getValue("name").jsonPrimitive.content)
         assertEquals("/album", server.takeRequest().path)
         assertEquals("/album", secondaryServer.takeRequest().path)
     }

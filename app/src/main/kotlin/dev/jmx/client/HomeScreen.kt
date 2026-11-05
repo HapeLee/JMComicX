@@ -648,7 +648,7 @@ internal class HomeRepository(
     /**
      * 拉首屏。
      *
-     * 整段放在 IO 线程上。这条链里最重的几步——读响应体、解密、Gson 解析、写磁盘缓存、
+     * 整段放在 IO 线程上。这条链里最重的几步——读响应体、解密、JSON 解析、写磁盘缓存、
      * 再把上百个条目映射成 [HomeAlbum]（含 `Html.fromHtml` 清洗栏目标题）——原先都跟着
      * 调用方（Compose 的 LaunchedEffect）跑在主线程上，于是每次"转圈快转完时"整个界面卡一下。
      */

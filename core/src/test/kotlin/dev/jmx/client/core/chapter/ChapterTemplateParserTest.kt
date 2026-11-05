@@ -1,13 +1,40 @@
 package dev.jmx.client.core.chapter
 
-import dev.jmx.client.core.result.JmxResult
 import dev.jmx.client.core.result.JmxError
+import dev.jmx.client.core.result.JmxResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChapterTemplateParserTest {
     private val parser = ChapterTemplateParser()
+
+    @Test
+    fun parsesSingleQuotedTemplateWithoutChangingEscapesOrNestedBraces() {
+        val html = """
+            const result = {images: ['00001.webp', 'it\'s{2}.jpg'], meta: {title: 'say "hi"', caption: "don\'t"},};
+            const config = {imghost: 'https://img.test', jmid: '123456', cache: '?x=it\'s',};
+            var aid = 654321;
+            var scramble_id = 220980;
+            var speed = '0';
+        """.trimIndent()
+        val result = parser.parse(html)
+        assertTrue(result.toString(), result is JmxResult.Success)
+        val template = (result as JmxResult.Success).value
+        assertEquals(listOf("00001.webp", "it's{2}.jpg"), template.imageFileNames)
+        assertEquals("?x=it's", template.cacheSuffix)
+    }
+
+    @Test
+    fun malformedQuotedTemplateIsReportedAsSchemaFailure() {
+        val result = parser.parse("""
+            const result = {images: ['unterminated]};
+            const config = {imghost: 'https://img.test', jmid: '123456', cache: ''};
+            var aid = 1; var scramble_id = 1; var speed = '0';
+        """.trimIndent())
+        assertTrue(result is JmxResult.Failure)
+        assertTrue((result as JmxResult.Failure).error is JmxError.Schema)
+    }
 
     @Test
     fun parsesConstLetAndVarTemplate() {

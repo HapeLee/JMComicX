@@ -1,20 +1,22 @@
 package dev.jmx.client.core.network
 
-import com.google.gson.JsonElement
-import com.google.gson.JsonParser
 import dev.jmx.client.core.cache.JsonResponseCache
-import dev.jmx.client.core.result.NetworkExchange
+import dev.jmx.client.core.json.WireJson
+import dev.jmx.client.core.json.parseWireElement
 import dev.jmx.client.core.result.JmxError
 import dev.jmx.client.core.result.JmxResult
+import dev.jmx.client.core.result.NetworkExchange
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import okhttp3.CookieJar
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 
 class JmxApiClient(
     private val httpClient: JmxHttpClient,
@@ -91,7 +93,7 @@ class JmxApiClient(
     /**
      * 读缓存并解析，一次线程切换里做完。
      *
-     * 读要碰磁盘、解析要走一遍 Gson，调用方却是 Compose 的 LaunchedEffect（主线程）。
+     * 读要碰磁盘、解析要走一遍 JSON，调用方却是 Compose 的 LaunchedEffect（主线程）。
      * 返回 age 而不是 Entry，是为了让 [nowMillis] 与解析结果在同一次快照里取齐。
      */
     private suspend fun readCache(cache: JsonResponseCache, key: String): Pair<Long, JsonElement>? =
@@ -162,7 +164,7 @@ class JmxApiClient(
             is JmxResult.Failure -> return result
         }
         val exchange = raw.toExchange(request)
-        // 解密是 AES + Base64，紧接着还要 Gson 解析整份响应；首页/收藏一页就有几十上百 KB。
+        // 解密是 AES + Base64，紧接着还要 JSON 解析整份响应；首页/收藏一页就有几十上百 KB。
         // 这段必须离开调用方线程（Compose 的 LaunchedEffect 跑在主线程上）。
         val envelope = when (
             val decoded = withContext(Dispatchers.IO) {
@@ -225,7 +227,7 @@ class JmxApiClient(
  * 而不是把损坏内容当错误抛给调用方。
  */
 private fun String.parseJsonOrNull(): JsonElement? =
-    runCatching { JsonParser.parseString(this) }.getOrNull()?.takeUnless { it.isJsonNull }
+    runCatching { WireJson.parseWireElement(this) }.getOrNull()?.takeUnless { it is JsonNull }
 
 fun JmxError.withExchange(exchange: NetworkExchange): JmxError {
     return when (this) {

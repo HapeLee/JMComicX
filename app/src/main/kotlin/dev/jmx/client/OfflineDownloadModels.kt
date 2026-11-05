@@ -2,14 +2,17 @@ package dev.jmx.client
 
 import dev.jmx.client.core.api.AlbumChapter
 import dev.jmx.client.core.api.AlbumDetail
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 internal enum class OfflineDownloadStatus { QUEUED, DOWNLOADING, PAUSED, COMPLETED, FAILED }
 
@@ -156,45 +159,61 @@ internal object OfflineFiles {
     }
 }
 
-/** Explicit JSON whitelist; Gson reflection would persist raw API/user/session fields. */
+/** Explicit JSON whitelist; never persist raw API/user/session fields. */
 internal object OfflineMetadata {
-    fun encode(albums: List<OfflineAlbum>): String = JSONObject().put("version", 1)
-        .put("albums", JSONArray(albums.map { album ->
-            JSONObject().put("id", album.id).put("title", album.title)
-                .put("detail", encodeDetail(album.detail)).put("status", album.status.name)
-                .put("error", album.error).put("updatedAt", album.updatedAt)
-                .put("chapters", JSONArray(album.chapters.map { chapter ->
-                    JSONObject().put("id", chapter.id).put("name", chapter.name).put("sort", chapter.sort)
-                        .put("expected", chapter.expectedPageCount).put("fingerprint", chapter.sourceFingerprint)
-                        .put("pages", JSONArray(chapter.pages.map { page ->
-                            JSONObject().put("index", page.index).put("path", page.relativePath)
-                                .put("bytes", page.byteCount).put("sha256", page.sha256)
+    fun encode(albums: List<OfflineAlbum>): String = buildJsonObject {
+        put("version", 1)
+        put("albums", JsonArray(albums.map { album ->
+            buildJsonObject {
+                put("id", album.id)
+                put("title", album.title)
+                put("detail", encodeDetail(album.detail))
+                put("status", album.status.name)
+                album.error?.let { put("error", it) }
+                put("updatedAt", album.updatedAt)
+                put("chapters", JsonArray(album.chapters.map { chapter ->
+                    buildJsonObject {
+                        put("id", chapter.id)
+                        put("name", chapter.name)
+                        chapter.sort?.let { put("sort", it) }
+                        put("expected", chapter.expectedPageCount)
+                        chapter.sourceFingerprint?.let { put("fingerprint", it) }
+                        put("pages", JsonArray(chapter.pages.map { page ->
+                            buildJsonObject {
+                                put("index", page.index)
+                                put("path", page.relativePath)
+                                put("bytes", page.byteCount)
+                                put("sha256", page.sha256)
+                            }
                         }))
+                    }
                 }))
-        })).toString()
+            }
+        }))
+    }.toString()
 
     fun decode(text: String): List<OfflineAlbum> {
-        val root = JSONObject(text)
-        require(root.getInt("version") == 1) { "不支持的离线元数据版本" }
-        val albums = root.getJSONArray("albums")
-        val result = (0 until albums.length()).map { index ->
-            val item = albums.getJSONObject(index)
-            val id = item.getString("id").also(OfflineFiles::requireId)
-            val detail = decodeDetail(item.getJSONObject("detail"))
+        val root = parseJsonObject(text)
+        require(root.requiredInt("version") == 1) { "不支持的离线元数据版本" }
+        val albums = root.requiredArray("albums")
+        val result = (0 until albums.size).map { index ->
+            val item = albums.requiredObject(index)
+            val id = item.requiredString("id").also(OfflineFiles::requireId)
+            val detail = decodeDetail(item.requiredObject("detail"))
             require(detail.id == id)
-            val chapters = item.getJSONArray("chapters").objects().map { chapter ->
-                val chapterId = chapter.getString("id").also(OfflineFiles::requireId)
-                val expected = chapter.getInt("expected").also { require(it in 0..100_000) }
-                val pages = chapter.getJSONArray("pages").objects().map { page ->
-                    OfflinePage(page.getInt("index"), page.getString("path"), page.getLong("bytes"), page.getString("sha256"))
+            val chapters = item.requiredArray("chapters").objects().map { chapter ->
+                val chapterId = chapter.requiredString("id").also(OfflineFiles::requireId)
+                val expected = chapter.requiredInt("expected").also { require(it in 0..100_000) }
+                val pages = chapter.requiredArray("pages").objects().map { page ->
+                    OfflinePage(page.requiredInt("index"), page.requiredString("path"), page.requiredLong("bytes"), page.requiredString("sha256"))
                 }
-                OfflineChapter(chapterId, chapter.getString("name"), chapter.nullableString("sort"),
+                OfflineChapter(chapterId, chapter.requiredString("name"), chapter.nullableString("sort"),
                     expected, pages, chapter.nullableString("fingerprint"))
             }
             require(chapters.map { it.id }.distinct().size == chapters.size)
-            OfflineAlbum(id, item.getString("title"), detail, chapters,
-                OfflineDownloadStatus.valueOf(item.getString("status")), error = item.nullableString("error"),
-                updatedAt = item.optLong("updatedAt", 0L))
+            OfflineAlbum(id, item.requiredString("title"), detail, chapters,
+                OfflineDownloadStatus.valueOf(item.requiredString("status")), error = item.nullableString("error"),
+                updatedAt = item.longValue("updatedAt", 0L))
         }
         require(result.map { it.id }.distinct().size == result.size)
         return result
@@ -202,28 +221,43 @@ internal object OfflineMetadata {
 
     fun sanitize(detail: AlbumDetail): AlbumDetail = decodeDetail(encodeDetail(detail))
 
-    private fun encodeDetail(detail: AlbumDetail) = JSONObject()
-        .put("id", detail.id).put("name", detail.name).put("description", detail.description)
-        .put("authors", JSONArray(detail.authors)).put("imageCount", detail.imageCount)
-        .put("totalViews", detail.totalViews).put("likes", detail.likes).put("commentTotal", detail.commentTotal)
-        .put("tags", JSONArray(detail.tags)).put("actors", JSONArray(detail.actors)).put("works", JSONArray(detail.works))
-        .put("seriesId", detail.seriesId).put("price", detail.price)
-        .put("series", JSONArray(detail.series.map { JSONObject().put("id", it.id).put("name", it.name).put("sort", it.sort) }))
+    private fun encodeDetail(detail: AlbumDetail) = buildJsonObject {
+        put("id", detail.id)
+        detail.name?.let { put("name", it) }
+        detail.description?.let { put("description", it) }
+        put("authors", detail.authors.toJsonArray())
+        detail.imageCount?.let { put("imageCount", it) }
+        detail.totalViews?.let { put("totalViews", it) }
+        detail.likes?.let { put("likes", it) }
+        detail.commentTotal?.let { put("commentTotal", it) }
+        put("tags", detail.tags.toJsonArray())
+        put("actors", detail.actors.toJsonArray())
+        put("works", detail.works.toJsonArray())
+        detail.seriesId?.let { put("seriesId", it) }
+        detail.price?.let { put("price", it) }
+        put("series", JsonArray(detail.series.map { chapter ->
+            buildJsonObject {
+                put("id", chapter.id)
+                chapter.name?.let { put("name", it) }
+                chapter.sort?.let { put("sort", it) }
+            }
+        }))
+    }
 
-    private fun decodeDetail(item: JSONObject) = AlbumDetail(
-        id = item.getString("id"), name = item.nullableString("name"), description = item.nullableString("description"),
+    private fun decodeDetail(item: JsonObject) = AlbumDetail(
+        id = item.requiredString("id"), name = item.nullableString("name"), description = item.nullableString("description"),
         authors = item.strings("authors"), imageCount = item.nullableInt("imageCount"), totalViews = item.nullableInt("totalViews"),
         likes = item.nullableInt("likes"), commentTotal = item.nullableInt("commentTotal"), tags = item.strings("tags"),
         actors = item.strings("actors"), works = item.strings("works"), isFavorite = null, liked = null, related = emptyList(),
-        series = item.getJSONArray("series").objects().map {
-            AlbumChapter(it.getString("id").also(OfflineFiles::requireId), it.nullableString("name"), it.nullableString("sort"))
+        series = item.requiredArray("series").objects().map {
+            AlbumChapter(it.requiredString("id").also(OfflineFiles::requireId), it.nullableString("name"), it.nullableString("sort"))
         }, seriesId = item.nullableString("seriesId"), price = item.nullableInt("price"), purchased = null, raw = emptyMap(),
     )
 
-    private fun JSONArray.objects() = (0 until length()).map(::getJSONObject)
-    private fun JSONObject.nullableString(key: String): String? = if (isNull(key) || !has(key)) null else getString(key)
-    private fun JSONObject.nullableInt(key: String): Int? = if (isNull(key) || !has(key)) null else getInt(key)
-    private fun JSONObject.strings(key: String): List<String> = getJSONArray(key).let { array ->
-        (0 until array.length()).map(array::getString)
+    private fun JsonArray.objects() = (0 until size).map(::requiredObject)
+    private fun JsonObject.nullableString(key: String): String? = if (get(key) == null || get(key) == JsonNull) null else requiredString(key)
+    private fun JsonObject.nullableInt(key: String): Int? = if (get(key) == null || get(key) == JsonNull) null else requiredInt(key)
+    private fun JsonObject.strings(key: String): List<String> = requiredArray(key).let { array ->
+        (0 until array.size).map(array::requiredString)
     }
 }

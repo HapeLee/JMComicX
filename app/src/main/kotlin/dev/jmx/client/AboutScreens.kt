@@ -1,6 +1,7 @@
 package dev.jmx.client
 
 import android.app.Activity
+import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -28,6 +29,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import dev.jmx.client.effect.liquid.BindTopBarGlassScroll
+import dev.jmx.client.effect.liquid.GlassTopBarIcon as Icon
+import dev.jmx.client.effect.liquid.LiquidGlassIconButton as IconButton
 import dev.jmx.client.effect.liquid.rememberTopBarGlassProgress
 import dev.jmx.client.effect.rememberBarBackdrop
 import top.yukonga.miuix.kmp.basic.Card
@@ -43,9 +46,6 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import android.graphics.Color as AndroidColor
-import dev.jmx.client.effect.liquid.GlassTopBarIcon as Icon
-import dev.jmx.client.effect.liquid.LiquidGlassIconButton as IconButton
 
 internal data class ThirdPartyLibrary(
     val name: String,
@@ -61,7 +61,7 @@ internal val thirdPartyLibraries = listOf(
     ThirdPartyLibrary("Kotlin", "Apache-2.0", "https://github.com/JetBrains/kotlin"),
     ThirdPartyLibrary("Coil", "Apache-2.0", "https://github.com/coil-kt/coil"),
     ThirdPartyLibrary("OkHttp", "Apache-2.0", "https://github.com/square/okhttp"),
-    ThirdPartyLibrary("Gson", "Apache-2.0", "https://github.com/google/gson"),
+    ThirdPartyLibrary("Kotlin Serialization", "Apache-2.0", "https://github.com/Kotlin/kotlinx.serialization"),
     ThirdPartyLibrary("OpenCC4J", "Apache-2.0", "https://github.com/houbb/opencc4j"),
     ThirdPartyLibrary("WebP ImageIO", "Apache-2.0", "https://github.com/usefulness/webp-imageio"),
 )

@@ -1,13 +1,14 @@
 package dev.jmx.client.core.api
 
-import com.google.gson.JsonParser
+import dev.jmx.client.core.json.JmxJson
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FavoritePageTest {
     @Test
     fun pageSizeCountIsNotTotal() {
-        val page = JsonParser.parseString("""{"count":20,"list":[],"folder_list":[]}""").asJsonObject.toFavoritePage()
+        val page = JmxJson.parseToJsonElement("""{"count":20,"list":[],"folder_list":[]}""").jsonObject.toFavoritePage()
         assertEquals(null, page.total)
     }
 
@@ -23,7 +24,7 @@ class FavoritePageTest {
               "count":20
             }
         """.trimIndent()
-        val page = JsonParser.parseString(json).asJsonObject.toFavoritePage()
+        val page = JmxJson.parseToJsonElement(json).jsonObject.toFavoritePage()
         assertEquals(3, page.total)
         assertEquals(1, page.content.size)
         assertEquals("1", page.content.single().id)

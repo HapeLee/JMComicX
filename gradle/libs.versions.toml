@@ -1,19 +1,18 @@
 [versions]
-agp = "9.2.1"
+agp = "9.5.0"
 activity-compose = "1.13.0"
 core-splashscreen = "1.2.0"
-androidx-navigationevent = "1.1.2"
-kotlin = "2.4.0"
-coroutines = "1.10.2"
-coil = "3.5.0"
-okhttp = "5.3.2"
-gson = "2.13.2"
+androidx-navigationevent = "1.2.0"
+kotlin = "2.4.21"
+coroutines = "1.11.0"
+coil = "3.6.3"
+okhttp = "5.5.1"
+serialization = "1.12.0"
 junit = "4.13.2"
-json = "20240303"
 miuix = "0.9.4"
 miuix-nav = "0.9.4"
 opencc4j = "1.14.0"
-webp-imageio = "0.9.0"
+webp-imageio = "0.11.0"
 
 [libraries]
 # 与 Matter 使用同一版光学渲染器和连续曲率形状，避免同参数在不同 shader 上产生不同效果。
@@ -28,11 +27,8 @@ coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref 
 coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
-gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
-# 单元测试用的真 org.json：android.jar 里那套是抛 "Stub!" 的空壳，
-# 分组顺序/热度的编解码正是走 JSONArray，不装这个就只能整段跳过不测。
-json = { group = "org.json", name = "json", version.ref = "json" }
 miuix-icons-android = { group = "top.yukonga.miuix.kmp", name = "miuix-icons-android", version.ref = "miuix" }
 miuix-nav-android = { group = "top.yukonga.miuix.kmp", name = "miuix-nav-android", version.ref = "miuix-nav" }
 miuix-blur-android = { group = "top.yukonga.miuix.kmp", name = "miuix-blur-android", version.ref = "miuix" }
@@ -46,3 +42,4 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

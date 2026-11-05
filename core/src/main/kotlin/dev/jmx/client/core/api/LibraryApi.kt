@@ -6,6 +6,10 @@ import dev.jmx.client.core.network.apiRequest
 import dev.jmx.client.core.protocol.ApiRoute
 import dev.jmx.client.core.result.JmxError
 import dev.jmx.client.core.result.JmxResult
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 
 class LibraryApi(
     private val apiClient: JmxApiClient
@@ -22,8 +26,8 @@ class LibraryApi(
             is JmxResult.Failure -> return result
         }
         val sections = when {
-            data.isJsonArray -> data.asObjectListOrEmpty().map { it.toHomePromoteSection() }
-            data.isJsonObject -> listOf(data.asJsonObject.toHomePromoteSection())
+            data is JsonArray -> data.asObjectListOrEmpty().map { it.toHomePromoteSection() }
+            data is JsonObject -> listOf(data.jsonObject.toHomePromoteSection())
             else -> emptyList()
         }
         return JmxResult.Success(sections)
@@ -41,8 +45,8 @@ class LibraryApi(
             is JmxResult.Failure -> return result
         }
         val albums = when {
-            data.isJsonArray -> data.asObjectListOrEmpty().map { it.toAlbumSummary() }
-            data.isJsonObject -> data.asJsonObject.firstAlbumList()
+            data is JsonArray -> data.asObjectListOrEmpty().map { it.toAlbumSummary() }
+            data is JsonObject -> data.jsonObject.firstAlbumList()
             else -> emptyList()
         }
         return JmxResult.Success(albums)
@@ -239,8 +243,8 @@ class LibraryApi(
             is JmxResult.Success -> {
                 val element = result.value.data
                 when {
-                    element.isJsonObject -> DailyDataOutcome.Data(element.asJsonObject)
-                    element.isJsonNull -> DailyDataOutcome.Empty(
+                    element is JsonObject -> DailyDataOutcome.Data(element)
+                    element is JsonNull -> DailyDataOutcome.Empty(
                         usedEndpointUrl = result.value.exchange.requestUrl
                     )
                     else -> DailyDataOutcome.Error(JmxError.Schema("daily data is not an object"))
@@ -250,7 +254,7 @@ class LibraryApi(
     }
 
     private sealed interface DailyDataOutcome {
-        data class Data(val root: com.google.gson.JsonObject) : DailyDataOutcome
+        data class Data(val root: JsonObject) : DailyDataOutcome
         data class Empty(val usedEndpointUrl: String?) : DailyDataOutcome
         data class Error(val error: JmxError) : DailyDataOutcome
     }
@@ -297,10 +301,10 @@ class LibraryApi(
         return JmxResult.Success(root.toRawMap())
     }
 
-    private fun com.google.gson.JsonObject.firstAlbumList(): List<AlbumSummary> {
+    private fun JsonObject.firstAlbumList(): List<AlbumSummary> {
         val page = toAlbumPage()
         if (page.content.isNotEmpty()) return page.content
-        return entrySet()
+        return entries
             .firstNotNullOfOrNull { (_, value) ->
                 value.asObjectListOrEmpty().takeIf { it.isNotEmpty() }?.map { it.toAlbumSummary() }
             }

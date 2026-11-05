@@ -5,12 +5,27 @@ import dev.jmx.client.core.crypto.JmxHash
 import dev.jmx.client.core.protocol.JmxProtocolConstants
 import dev.jmx.client.core.result.JmxError
 import dev.jmx.client.core.result.JmxResult
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ApiResponseDecoderTest {
+    @Test
+    fun retainsLenientEnvelopeParsingAndLeavesQuotedApostrophesUntouched() {
+        val result = ApiResponseDecoder().decodePlainEnvelope("""{
+            // Legacy wire responses may use JavaScript-style quoting.
+            code: '200', data: {name: 'it\'s a book', caption: "don't change \\"},
+        }""")
+        assertTrue(result.toString(), result is JmxResult.Success)
+        val data = (result as JmxResult.Success).value.data!!.jsonObject
+        assertEquals("it's a book", data.getValue("name").jsonPrimitive.content)
+        assertEquals("don't change \\", data.getValue("caption").jsonPrimitive.content)
+    }
+
     @Test
     fun encryptedEnvelopeDecodesEncryptedStringData() {
         val ts = 1700566805L
@@ -20,7 +35,7 @@ class ApiResponseDecoderTest {
 
         assertTrue(result is JmxResult.Success)
         val envelope = (result as JmxResult.Success).value
-        assertEquals("demo", envelope.data!!.asJsonObject["name"].asString)
+        assertEquals("demo", envelope.data!!.jsonObject.getValue("name").jsonPrimitive.content)
     }
 
     @Test
@@ -32,7 +47,7 @@ class ApiResponseDecoderTest {
 
         assertTrue(result is JmxResult.Success)
         val envelope = (result as JmxResult.Success).value
-        assertEquals("plain", envelope.data!!.asJsonObject["name"].asString)
+        assertEquals("plain", envelope.data!!.jsonObject.getValue("name").jsonPrimitive.content)
     }
 
     @Test
@@ -44,7 +59,7 @@ class ApiResponseDecoderTest {
 
         assertTrue(result is JmxResult.Success)
         val envelope = (result as JmxResult.Success).value
-        assertEquals("1", envelope.data!!.asJsonArray[0].asJsonObject["id"].asString)
+        assertEquals("1", envelope.data!!.jsonArray[0].jsonObject.getValue("id").jsonPrimitive.content)
     }
 
     @Test
@@ -70,7 +85,7 @@ class ApiResponseDecoderTest {
 
         assertTrue(result is JmxResult.Success)
         val envelope = (result as JmxResult.Success).value
-        assertEquals("noisy", envelope.data!!.asJsonObject["name"].asString)
+        assertEquals("noisy", envelope.data!!.jsonObject.getValue("name").jsonPrimitive.content)
     }
 
     @Test

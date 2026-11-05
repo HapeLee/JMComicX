@@ -25,9 +25,9 @@ JMComicX 与 JMComic / 禁漫天堂及其关联方没有隶属、合作、授权
 | 导航      | MIUIX Nav                     |
 | 网络      | OkHttp 5                      |
 | 图片      | Coil、Android Bitmap           |
-| 序列化     | Gson                          |
+| 序列化     | Kotlin Serialization                          |
 | 中文转换    | OpenCC4J                      |
-| 构建      | AGP 9.2、Gradle 9.4、JDK 21     |
+| 构建      | AGP 9.5、Gradle 9.7、JDK 21     |
 
 ## 架构
 
@@ -200,7 +200,7 @@ JMComicX/
 - [compose-miuix-ui/miuix](https://github.com/compose-miuix-ui/miuix)：UI实现。
 - [hect0x7/JMComic-Crawler-Python](https://github.com/hect0x7/JMComic-Crawler-Python)：协议行为与图片处理参考。
 - [Dedicatus546/jm-mobile](https://github.com/Dedicatus546/jm-mobile)：移动客户端业务参考。
-- AndroidX、Kotlin、Coil、OkHttp、Gson、OpenCC4J、WebP ImageIO 等开源组件。
+- AndroidX、Kotlin、Coil、OkHttp、Kotlin Serialization、OpenCC4J、WebP ImageIO 等开源组件。
 
 第三方项目和代码继续遵循各自原始许可证。应用内“关于 JMComicX -> 第三方开源库”可查看主要依赖及项目地址。
 

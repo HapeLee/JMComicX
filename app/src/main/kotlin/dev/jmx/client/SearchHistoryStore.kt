@@ -2,7 +2,7 @@ package dev.jmx.client
 
 import android.content.Context
 import androidx.core.content.edit
-import org.json.JSONArray
+import kotlinx.serialization.json.add
 
 internal class SearchHistoryStore(context: Context) {
     private val applicationContext = context.applicationContext
@@ -14,10 +14,10 @@ internal class SearchHistoryStore(context: Context) {
     fun load(): List<String> {
         val encoded = preferences.getString(SEARCH_HISTORY_KEY, null)
         val current = encoded?.let { value -> runCatching {
-            val array = JSONArray(value)
+            val array = parseJsonArray(value)
             buildList {
-                repeat(array.length()) { index ->
-                    array.optString(index)
+                repeat(array.size) { index ->
+                    array.stringValue(index)
                         .trim()
                         .takeIf(String::isNotEmpty)
                         ?.let(::add)
@@ -33,7 +33,7 @@ internal class SearchHistoryStore(context: Context) {
             .take(SEARCH_HISTORY_LIMIT)
         preferences.edit {
             putBoolean(LEGACY_HISTORY_MIGRATED_KEY, true)
-            if (migrated.isNotEmpty()) putString(SEARCH_HISTORY_KEY, JSONArray(migrated).toString())
+            if (migrated.isNotEmpty()) putString(SEARCH_HISTORY_KEY, migrated.toJsonArray().toString())
         }
         return migrated
     }
@@ -48,7 +48,7 @@ internal class SearchHistoryStore(context: Context) {
 
     private fun persist(history: List<String>): List<String> {
         preferences.edit {
-            putString(SEARCH_HISTORY_KEY, JSONArray(history).toString())
+            putString(SEARCH_HISTORY_KEY, history.toJsonArray().toString())
         }
         return history
     }

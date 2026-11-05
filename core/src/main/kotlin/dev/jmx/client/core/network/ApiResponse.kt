@@ -1,7 +1,7 @@
 package dev.jmx.client.core.network
 
-import com.google.gson.JsonElement
 import dev.jmx.client.core.result.NetworkExchange
+import kotlinx.serialization.json.JsonElement
 
 data class ApiEnvelope(
     val code: Int,

@@ -11,6 +11,12 @@ import dev.jmx.client.core.protocol.JmId
 import dev.jmx.client.core.protocol.JmxProtocolConstants
 import dev.jmx.client.core.result.JmxError
 import dev.jmx.client.core.result.JmxResult
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 class ChapterApi(
     private val apiClient: JmxApiClient,
@@ -120,11 +126,11 @@ class ChapterApi(
     }
 }
 
-private fun com.google.gson.JsonObject.pageArrOrEmpty(): List<String> {
+private fun JsonObject.pageArrOrEmpty(): List<String> {
     val direct = get("page_arr") ?: get("images") ?: return emptyList()
     return when {
-        direct.isJsonArray -> direct.asJsonArray.mapNotNull {
-            it.takeIf { el -> el.isJsonPrimitive }?.asString
+        direct is JsonArray -> direct.mapNotNull {
+            it.takeIf { el -> (el is JsonPrimitive && el != JsonNull) }?.jsonPrimitive?.content
         }
         else -> emptyList()
     }

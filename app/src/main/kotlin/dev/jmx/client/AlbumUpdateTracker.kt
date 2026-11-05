@@ -2,8 +2,9 @@ package dev.jmx.client
 
 import android.content.Context
 import androidx.core.content.edit
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * 一部漫画的更新追踪记录。
@@ -237,35 +238,31 @@ internal fun countPendingFavorites(
 ): Int = records.values.count { it.hasUpdate && it.albumId in favoriteAlbumIds }
 
 internal fun encodeAlbumUpdateRecords(records: Map<String, AlbumUpdateRecord>): String {
-    val array = JSONArray()
-    records.values.forEach { record ->
-        array.put(
-            JSONObject().apply {
-                put("id", record.albumId)
-                put("seen", record.seenChapterCount)
-                put("latest", record.latestChapterCount)
-                put("checkedAt", record.checkedAt)
-            },
-        )
-    }
-    return array.toString()
+    return JsonArray(records.values.map { record ->
+        buildJsonObject {
+            put("id", record.albumId)
+            put("seen", record.seenChapterCount)
+            put("latest", record.latestChapterCount)
+            put("checkedAt", record.checkedAt)
+        }
+    }).toString()
 }
 
 internal fun decodeAlbumUpdateRecords(raw: String): Map<String, AlbumUpdateRecord> {
     if (raw.isBlank()) return emptyMap()
-    val array = runCatching { JSONArray(raw) }.getOrNull() ?: return emptyMap()
-    val result = LinkedHashMap<String, AlbumUpdateRecord>(array.length())
-    for (index in 0 until array.length()) {
-        val item = array.optJSONObject(index) ?: continue
-        val id = item.optString("id").trim()
+    val array = runCatching { parseJsonArray(raw) }.getOrNull() ?: return emptyMap()
+    val result = LinkedHashMap<String, AlbumUpdateRecord>(array.size)
+    for (index in 0 until array.size) {
+        val item = array.objectOrNull(index) ?: continue
+        val id = item.stringValue("id").trim()
         if (id.isEmpty()) continue
-        val latest = item.optInt("latest", 0).coerceAtLeast(0)
-        val seen = item.optInt("seen", latest).coerceIn(0, latest)
+        val latest = item.intValue("latest", 0).coerceAtLeast(0)
+        val seen = item.intValue("seen", latest).coerceIn(0, latest)
         result[id] = AlbumUpdateRecord(
             albumId = id,
             seenChapterCount = seen,
             latestChapterCount = latest,
-            checkedAt = item.optLong("checkedAt", 0L),
+            checkedAt = item.longValue("checkedAt", 0L),
         )
     }
     return result

@@ -1,21 +1,28 @@
 package dev.jmx.client.core.network
 
-import com.google.gson.JsonParser
 import dev.jmx.client.core.crypto.AesEcbPkcs7
 import dev.jmx.client.core.crypto.JmxHash
+import dev.jmx.client.core.json.WireJson
+import dev.jmx.client.core.json.parseWireElement
 import dev.jmx.client.core.protocol.JmxProtocolConstants
 import dev.jmx.client.core.result.JmxError
 import dev.jmx.client.core.result.JmxResult
 import dev.jmx.client.core.session.SessionManager
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.IOException
 
 data class DomainServerPayload(
     val apiHosts: List<String>
@@ -40,13 +47,13 @@ class DomainServerDecoder {
                 is JmxResult.Failure -> return it
             }
         }
-        val root = runCatching { JsonParser.parseString(json).asJsonObject }.getOrElse {
+        val root = runCatching { WireJson.parseWireElement(json).jsonObject }.getOrElse {
             return JmxResult.Failure(JmxError.Schema("域名服务器 JSON 解析失败", cause = it))
         }
         val hosts = root["Server"]
-            ?.takeIf { it.isJsonArray }
-            ?.asJsonArray
-            ?.mapNotNull { item -> item.takeIf { it.isJsonPrimitive }?.asString?.trim() }
+            ?.takeIf { it is JsonArray }
+            ?.jsonArray
+            ?.mapNotNull { item -> item.takeIf { it is JsonPrimitive && it != JsonNull }?.jsonPrimitive?.content?.trim() }
             ?.filter { it.isNotEmpty() }
             ?.distinct()
             ?: emptyList()

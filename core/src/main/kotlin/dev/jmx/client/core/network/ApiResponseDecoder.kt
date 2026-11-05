@@ -1,17 +1,25 @@
 package dev.jmx.client.core.network
 
-import com.google.gson.Gson
-import com.google.gson.JsonElement
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
 import dev.jmx.client.core.crypto.AesEcbPkcs7
 import dev.jmx.client.core.crypto.JmxHash
+import dev.jmx.client.core.json.WireJson
+import dev.jmx.client.core.json.parseWireElement
+import dev.jmx.client.core.json.primitiveIntOrNull
 import dev.jmx.client.core.protocol.JmxProtocolConstants
 import dev.jmx.client.core.result.JmxError
 import dev.jmx.client.core.result.JmxResult
+import kotlinx.serialization.DeserializationStrategy
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonPrimitive
 
 class ApiResponseDecoder(
-    private val gson: Gson = Gson(),
+    private val json: Json = WireJson,
     private val bodySampler: BodySampler = BodySampler()
 ) {
     fun decodeEncryptedEnvelope(body: String, tokenTimestampSeconds: Long): JmxResult<ApiEnvelope> {
@@ -48,17 +56,17 @@ class ApiResponseDecoder(
         )
     }
 
-    fun <T> fromJson(element: JsonElement, clazz: Class<T>): JmxResult<T> {
-        return runCatching { gson.fromJson(element, clazz) }.fold(
+    fun <T> fromJson(element: JsonElement, deserializer: DeserializationStrategy<T>): JmxResult<T> {
+        return runCatching { json.decodeFromJsonElement(deserializer, element) }.fold(
             onSuccess = { JmxResult.Success(it) },
-            onFailure = { JmxResult.Failure(JmxError.Schema("数据模型解析失败：${clazz.simpleName}", cause = it)) }
+            onFailure = { JmxResult.Failure(JmxError.Schema("数据模型解析失败", cause = it)) }
         )
     }
 
     private fun parseJsonObject(body: String): JmxResult<JsonObject> {
         val element = parseJsonElement(body).unwrapOrReturn { return it }
-        return if (element.isJsonObject) {
-            JmxResult.Success(element.asJsonObject)
+        return if (element is JsonObject) {
+            JmxResult.Success(element)
         } else {
             JmxResult.Failure(JmxError.Schema("响应不是 JSON Object：${bodySampler.sample(body)}"))
         }
@@ -66,7 +74,7 @@ class ApiResponseDecoder(
 
     private fun parseJsonElement(body: String): JmxResult<JsonElement> {
         val normalized = body.trimLeadingNoise()
-        return runCatching { JsonParser.parseString(normalized) }.fold(
+        return runCatching { json.parseWireElement(normalized) }.fold(
             onSuccess = { JmxResult.Success(it) },
             onFailure = {
                 JmxResult.Failure(
@@ -100,10 +108,10 @@ class ApiResponseDecoder(
         tokenTimestampSeconds: Long,
         body: String
     ): JmxResult<JsonElement> {
-        if (dataElement.isJsonNull) {
+        if (dataElement is JsonNull) {
             return JmxResult.Failure(JmxError.EmptyData("API 响应 data 为 null：${bodySampler.sample(body)}"))
         }
-        if (dataElement.isJsonObject || dataElement.isJsonArray) {
+        if (dataElement is JsonObject || dataElement is JsonArray) {
             return JmxResult.Success(dataElement)
         }
         val encryptedData = dataElement.asStringOrNull()
@@ -128,10 +136,10 @@ class ApiResponseDecoder(
         }
     }
 
-    private fun JsonElement.asIntOrNull(): Int? = runCatching { asInt }.getOrNull()
+    private fun JsonElement.asIntOrNull(): Int? = primitiveIntOrNull()
 
     private fun JsonElement.asStringOrNull(): String? {
-        return takeIf { it.isJsonPrimitive }?.let { runCatching { it.asString }.getOrNull() }
+        return takeIf { it is JsonPrimitive && it != JsonNull }?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
     }
 
     private fun JsonObject.apiCodeOrNull(): Int? {
@@ -147,7 +155,7 @@ class ApiResponseDecoder(
     private fun JsonObject.firstPrimitive(vararg names: String): JsonElement? {
         return names.asSequence()
             .mapNotNull { this[it] }
-            .firstOrNull { it.isJsonPrimitive }
+            .firstOrNull { it is JsonPrimitive && it != JsonNull }
     }
 
     private fun defaultApiErrorMessage(code: Int): String = "接口返回错误：$code"

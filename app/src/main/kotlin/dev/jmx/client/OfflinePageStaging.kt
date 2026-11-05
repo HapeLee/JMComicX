@@ -1,7 +1,8 @@
 package dev.jmx.client
 
-import org.json.JSONObject
 import java.io.File
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 internal data class OfflineStagedPage(val page: OfflinePage, val file: File)
 
@@ -21,13 +22,13 @@ internal class OfflinePageStaging(
         val receipt = receipt(index)
         if (!receipt.isFile || receipt.length() !in 1..4096) return null
         return runCatching {
-            val json = JSONObject(receipt.readText())
-            if (json.getString("fingerprint") != fingerprint) return null
-            val path = json.getString("path")
+            val json = parseJsonObject(receipt.readText())
+            if (json.requiredString("fingerprint") != fingerprint) return null
+            val path = json.requiredString("path")
             val extension = path.substringAfterLast('.')
             require(path == relative(index, extension))
             val final = OfflineFiles.resolve(root, path)
-            val page = OfflinePage(index, path, json.getLong("bytes"), json.getString("sha256"))
+            val page = OfflinePage(index, path, json.requiredLong("bytes"), json.requiredString("sha256"))
             val file = payload(index).takeIf { it.isFile } ?: final
             if (page.byteCount <= 0 || !file.isFile || file.length() != page.byteCount ||
                 OfflineFiles.digest(file) != page.sha256) return null
@@ -42,9 +43,12 @@ internal class OfflinePageStaging(
         check(page.byteCount > 0) { "离线页面为空" }
         val destination = payload(index)
         OfflineFiles.atomicMove(file, destination)
-        OfflineFiles.atomicWrite(receipt(index), JSONObject()
-            .put("fingerprint", fingerprint).put("path", path)
-            .put("bytes", page.byteCount).put("sha256", page.sha256).toString())
+        OfflineFiles.atomicWrite(receipt(index), buildJsonObject {
+            put("fingerprint", fingerprint)
+            put("path", path)
+            put("bytes", page.byteCount)
+            put("sha256", page.sha256)
+        }.toString())
         return OfflineStagedPage(page, destination)
     }
 

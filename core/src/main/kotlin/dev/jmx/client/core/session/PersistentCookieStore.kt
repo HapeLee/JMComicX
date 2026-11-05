@@ -1,15 +1,18 @@
 package dev.jmx.client.core.session
 
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import dev.jmx.client.core.cache.KeyValueStore
+import dev.jmx.client.core.json.JmxJson
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import okhttp3.Cookie
 import okhttp3.HttpUrl
 
 class PersistentCookieStore(
     private val keyValueStore: KeyValueStore,
     private val nowMillis: () -> Long = { System.currentTimeMillis() },
-    private val gson: Gson = Gson()
+    private val json: Json = JmxJson
 ) : CookieStore {
     private val lock = Any()
 
@@ -69,7 +72,7 @@ class PersistentCookieStore(
 
     /**
      * @return 反序列化后的 Cookie 表。同一份 JSON 只解析一次：
-     *   读路径每请求都要走，Gson 在这里是纯重复开销。写入方一律经过 [writeCookies]，
+     *   读路径每请求都要走，JSON 在这里是纯重复开销。写入方一律经过 [writeCookies]，
      *   备忘随之更新；外部改了底层存储时 JSON 串会变，比较即失配，不会读到旧值。
      */
     private fun readCookies(): List<Cookie> {
@@ -81,8 +84,7 @@ class PersistentCookieStore(
         }
         if (json == cachedJson) return cachedCookies
         val parsed = runCatching {
-            val type = object : TypeToken<List<PersistedCookie>>() {}.type
-            gson.fromJson<List<PersistedCookie>>(json, type)
+            this.json.decodeFromString<List<PersistedCookie>>(json)
                 .mapNotNull { it.toCookie() }
         }.getOrDefault(emptyList())
         cachedJson = json
@@ -95,7 +97,7 @@ class PersistentCookieStore(
         val json = if (normalized.isEmpty()) {
             null
         } else {
-            gson.toJson(normalized.map { it.toPersistedCookie() })
+            json.encodeToString(normalized.map { it.toPersistedCookie() })
         }
         cachedJson = json
         cachedCookies = if (json == null) emptyList() else normalized
@@ -122,6 +124,7 @@ class PersistentCookieStore(
         )
     }
 
+    @Serializable
     private data class PersistedCookie(
         val name: String,
         val value: String,

@@ -1,28 +1,31 @@
 package dev.jmx.client.core.download
 
-import com.google.gson.Gson
-import com.google.gson.GsonBuilder
-import com.google.gson.reflect.TypeToken
+import dev.jmx.client.core.json.JmxJson
 import dev.jmx.client.core.result.JmxError
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
+@Serializable
 data class PersistedChapterDownloadTask(
     val id: String,
     val albumId: String,
     val chapterId: String,
     val shunt: String,
     val outputDirectory: String,
-    val maxImages: Int?,
-    val maxImageBytes: Long?,
+    val maxImages: Int? = null,
+    val maxImageBytes: Long? = null,
     val state: String,
-    val progressTotal: Int?,
-    val progressCompleted: Int?,
-    val progressFailed: Int?,
-    val progressBytesWritten: Long?,
-    val errorMessage: String?,
+    val progressTotal: Int? = null,
+    val progressCompleted: Int? = null,
+    val progressFailed: Int? = null,
+    val progressBytesWritten: Long? = null,
+    val errorMessage: String? = null,
 
     val completedImageFileNames: List<String> = emptyList(),
     val createdAtMillis: Long,
@@ -69,17 +72,16 @@ class InMemoryChapterDownloadTaskStore : ChapterDownloadTaskStore {
 
 class FileChapterDownloadTaskStore(
     private val file: Path,
-    private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
+    private val json: Json = Json(JmxJson) { prettyPrint = true }
 ) : ChapterDownloadTaskStore {
     private val lock = Any()
-    private val listType = object : TypeToken<List<PersistedChapterDownloadTask>>() {}.type
 
     override fun loadAll(): List<PersistedChapterDownloadTask> = synchronized(lock) {
         if (!Files.isRegularFile(file)) return emptyList()
         return runCatching {
             val text = Files.readString(file, StandardCharsets.UTF_8)
             if (text.isBlank()) emptyList()
-            else gson.fromJson<List<PersistedChapterDownloadTask>>(text, listType).orEmpty()
+            else json.decodeFromString<List<PersistedChapterDownloadTask>>(text)
         }.getOrDefault(emptyList())
     }
 
@@ -106,7 +108,7 @@ class FileChapterDownloadTaskStore(
         Files.createDirectories(parent)
         val temp = Files.createTempFile(parent, "jmx-tasks-", ".json")
         try {
-            Files.writeString(temp, gson.toJson(tasks), StandardCharsets.UTF_8)
+            Files.writeString(temp, json.encodeToString(tasks), StandardCharsets.UTF_8)
             try {
                 Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
             } catch (_: UnsupportedOperationException) {

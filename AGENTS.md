@@ -8,7 +8,7 @@ JMComicX 是使用 Kotlin、Jetpack Compose 与 Compose Miuix 构建的 Android 
 
 - **语言**: Kotlin 2.4
 - **Android**: minSdk 33 / targetSdk 37
-- **构建**: AGP 9.2、Gradle 9.4、JDK 21
+- **构建**: AGP 9.5、Gradle 9.7、JDK 21
 - **许可证**: GPL-3.0
 
 ## 模块结构
@@ -130,7 +130,7 @@ debug 配置了 `applicationIdSuffix = ".debug"`（包名为 `dev.jmx.client.deb
 - UI：Jetpack Compose + Compose Miuix 组件
 - 导航：MIUIX Nav
 - 网络：OkHttp 5（`core` 和 `app` 通过 Coil OkHttp fetcher 共用连接池）
-- 序列化：Gson
+- 序列化：Kotlin Serialization
 - 中文简繁转换：OpenCC4J
 - 异步：Kotlin Coroutines
 - 依赖管理：Gradle Version Catalog (`gradle/libs.versions.toml`)

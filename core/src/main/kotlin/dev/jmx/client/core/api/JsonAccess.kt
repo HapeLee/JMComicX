@@ -1,13 +1,22 @@
 package dev.jmx.client.core.api
 
-import com.google.gson.JsonElement
-import com.google.gson.JsonObject
+import dev.jmx.client.core.json.primitiveBoolean
+import dev.jmx.client.core.json.primitiveIntOrNull
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 internal fun JsonObject.stringOrNull(vararg names: String): String? {
     for (name in names) {
         val value = get(name)
-        if (value != null && value.isJsonPrimitive) {
-            return runCatching { value.asString }.getOrNull()
+        if (value is JsonPrimitive && value != JsonNull) {
+            return value.content
         }
     }
     return null
@@ -16,8 +25,8 @@ internal fun JsonObject.stringOrNull(vararg names: String): String? {
 internal fun JsonObject.intOrNull(vararg names: String): Int? {
     for (name in names) {
         val value = get(name)
-        if (value != null && value.isJsonPrimitive) {
-            return runCatching { value.asInt }.getOrNull()
+        if (value is JsonPrimitive && value != JsonNull) {
+            return value.primitiveIntOrNull()
         }
     }
     return null
@@ -26,8 +35,8 @@ internal fun JsonObject.intOrNull(vararg names: String): Int? {
 internal fun JsonObject.doubleOrNull(vararg names: String): Double? {
     for (name in names) {
         val value = get(name)
-        if (value != null && value.isJsonPrimitive) {
-            return runCatching { value.asDouble }.getOrNull()
+        if (value is JsonPrimitive && value != JsonNull) {
+            return value.doubleOrNull
         }
     }
     return null
@@ -36,8 +45,8 @@ internal fun JsonObject.doubleOrNull(vararg names: String): Double? {
 internal fun JsonObject.booleanOrNull(vararg names: String): Boolean? {
     for (name in names) {
         val value = get(name)
-        if (value != null && value.isJsonPrimitive) {
-            return runCatching { value.asBoolean }.getOrNull()
+        if (value is JsonPrimitive && value != JsonNull) {
+            return value.primitiveBoolean()
         }
     }
     return null
@@ -46,46 +55,37 @@ internal fun JsonObject.booleanOrNull(vararg names: String): Boolean? {
 internal fun JsonObject.stringListOrEmpty(vararg names: String): List<String> {
     for (name in names) {
         val value = get(name) ?: continue
-        if (value.isJsonArray) {
-            return value.asJsonArray
+        if (value is JsonArray) {
+            return value
                 .mapNotNull { item ->
-                    item.takeIf { it.isJsonPrimitive }?.let { runCatching { it.asString }.getOrNull() }
+                    item.takeIf { it is JsonPrimitive && it != JsonNull }?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
                 }
                 .filter { it.isNotBlank() }
         }
-        if (value.isJsonPrimitive) {
-            val text = runCatching { value.asString }.getOrNull()
-            if (!text.isNullOrBlank()) return listOf(text)
+        if (value is JsonPrimitive && value != JsonNull) {
+            val text = value.content
+            if (text.isNotBlank()) return listOf(text)
         }
     }
     return emptyList()
 }
 
 internal fun JsonElement?.asObjectOrNull(): JsonObject? {
-    return this?.takeIf { it.isJsonObject }?.asJsonObject
+    return this as? JsonObject
 }
 
 internal fun JsonElement?.asObjectListOrEmpty(): List<JsonObject> {
-    return this
-        ?.takeIf { it.isJsonArray }
-        ?.asJsonArray
-        ?.mapNotNull { it.asObjectOrNull() }
-        ?: emptyList()
+    return (this as? JsonArray)?.mapNotNull { it as? JsonObject } ?: emptyList()
 }
 
-internal fun JsonObject.toRawMap(): Map<String, Any?> {
-    return entrySet().associate { (key, value) ->
-        key to when {
-            value.isJsonNull -> null
-            value.isJsonPrimitive -> {
-                val primitive = value.asJsonPrimitive
-                when {
-                    primitive.isBoolean -> primitive.asBoolean
-                    primitive.isNumber -> primitive.asNumber
-                    else -> primitive.asString
-                }
-            }
-            else -> value.toString()
+internal fun JsonObject.toRawMap(): Map<String, Any?> = entries.associate { (key, value) ->
+    key to when (value) {
+        JsonNull -> null
+        is JsonPrimitive -> when {
+            value.isString -> value.content
+            value.booleanOrNull != null -> value.boolean
+            else -> value.content.toBigDecimalOrNull()
         }
+        else -> value.toString()
     }
 }

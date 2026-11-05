@@ -3,6 +3,7 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 // 显示版本由 version.properties 手工维护，内部编号由 Git 提交数派生。
@@ -150,7 +151,7 @@ dependencies {
     implementation(libs.androidx.navigationevent.compose)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
-    implementation(libs.gson)
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.miuix.blur.android)
     implementation(libs.miuix.icons.android)
     implementation(libs.miuix.nav.android)
@@ -160,5 +161,4 @@ dependencies {
     implementation(libs.opencc4j)
 
     testImplementation(libs.junit)
-    testImplementation(libs.json)
 }

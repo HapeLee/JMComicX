@@ -3,17 +3,21 @@ package dev.jmx.client
 import android.content.Context
 import android.util.Log
 import androidx.core.content.edit
-import com.google.gson.Gson
-import com.google.gson.annotations.SerializedName
+import dev.jmx.client.core.json.JmxJson
 import dev.jmx.client.core.network.defaultOkHttpClient
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.add
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -35,7 +39,7 @@ internal data class AppUpdateState(
 
 internal class AppUpdateManager(
     context: Context,
-    private val gson: Gson = Gson(),
+    private val json: Json = JmxJson,
     private val client: OkHttpClient = defaultOkHttpClient().newBuilder()
         .connectTimeout(6, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
@@ -130,7 +134,7 @@ internal class AppUpdateManager(
                 return@withContext null
             }
             val release = runCatching {
-                gson.fromJson(it.body.string(), GitHubRelease::class.java)
+                json.decodeFromString<GitHubRelease>(it.body.string())
             }.onFailure { error ->
                 Log.w(UPDATE_LOG_TAG, "release payload parse failed: $endpoint", error)
             }.getOrNull() ?: return@withContext null
@@ -229,20 +233,22 @@ internal class AppUpdateManager(
 
     private fun userAgent(): String = "JMComicX/$localVersionName (Android)"
 
+    @Serializable
     private data class GitHubRelease(
-        @SerializedName("tag_name") val tagName: String?,
-        @SerializedName("name") val name: String?,
-        @SerializedName("body") val body: String?,
-        @SerializedName("html_url") val htmlUrl: String?,
-        @SerializedName("draft") val draft: Boolean?,
-        @SerializedName("prerelease") val prerelease: Boolean?,
-        @SerializedName("assets") val assets: List<GitHubAsset>?,
+        @SerialName("tag_name") val tagName: String? = null,
+        @SerialName("name") val name: String? = null,
+        @SerialName("body") val body: String? = null,
+        @SerialName("html_url") val htmlUrl: String? = null,
+        @SerialName("draft") val draft: Boolean? = null,
+        @SerialName("prerelease") val prerelease: Boolean? = null,
+        @SerialName("assets") val assets: List<GitHubAsset>? = null,
     )
 
+    @Serializable
     private data class GitHubAsset(
-        @SerializedName("name") val name: String?,
-        @SerializedName("browser_download_url") val browserDownloadUrl: String?,
-        @SerializedName("size") val size: Long?,
+        @SerialName("name") val name: String? = null,
+        @SerialName("browser_download_url") val browserDownloadUrl: String? = null,
+        @SerialName("size") val size: Long? = null,
     )
 }
 

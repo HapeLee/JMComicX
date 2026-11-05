@@ -1,10 +1,18 @@
 package dev.jmx.client.core.chapter
 
-import com.google.gson.Gson
-import com.google.gson.JsonObject
-import com.google.gson.Strictness
+import dev.jmx.client.core.json.WireJson
+import dev.jmx.client.core.json.parseWireElement
 import dev.jmx.client.core.result.JmxError
 import dev.jmx.client.core.result.JmxResult
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 data class ChapterTemplate(
     val albumId: Int,
@@ -61,7 +69,7 @@ data class ChapterTemplateDiagnostics(
 }
 
 class ChapterTemplateParser(
-    private val gson: Gson = Gson().newBuilder().setStrictness(Strictness.LENIENT).create(),
+    private val json: Json = WireJson,
     private val sampleLimit: Int = 240
 ) {
     fun parse(html: String): JmxResult<ChapterTemplate> {
@@ -119,7 +127,7 @@ class ChapterTemplateParser(
     private fun extractObject(html: String, name: String, diagnostics: ChapterTemplateDiagnostics): JmxResult<JsonObject> {
         val json = extractAssignedObject(html, name)
             ?: return schemaFailure("章节模板缺少 $name 对象", name, diagnostics)
-        return runCatching { gson.fromJson(json, JsonObject::class.java) }.fold(
+        return runCatching { this.json.parseWireElement(json).jsonObject }.fold(
             onSuccess = { JmxResult.Success(it) },
             onFailure = {
                 schemaFailure("章节模板 $name 对象解析失败", name, diagnostics, cause = it)
@@ -140,7 +148,7 @@ class ChapterTemplateParser(
     }
 
     private fun JsonObject.requiredString(name: String, diagnostics: ChapterTemplateDiagnostics): JmxResult<String> {
-        val value = get(name)?.takeIf { it.isJsonPrimitive }?.asString
+        val value = get(name)?.takeIf { it is JsonPrimitive && it != JsonNull }?.jsonPrimitive?.content
         return if (value == null) {
             schemaFailure("章节模板 config 缺少 $name", "config.$name", diagnostics)
         } else {
@@ -150,19 +158,19 @@ class ChapterTemplateParser(
 
     private fun JsonObject.imageNamesOrEmpty(): List<String> {
         return get("images")
-            ?.takeIf { it.isJsonArray }
-            ?.asJsonArray
-            ?.mapNotNull { item -> item.takeIf { it.isJsonPrimitive }?.asString }
+            ?.takeIf { it is JsonArray }
+            ?.jsonArray
+            ?.mapNotNull { item -> item.takeIf { it is JsonPrimitive && it != JsonNull }?.jsonPrimitive?.content }
             ?.filter { it.isNotBlank() }
             ?: emptyList()
     }
 
     private fun JsonObject?.hasString(name: String): Boolean {
-        return this?.get(name)?.takeIf { it.isJsonPrimitive }?.asString?.isNotBlank() == true
+        return this?.get(name)?.takeIf { it is JsonPrimitive && it != JsonNull }?.jsonPrimitive?.content?.isNotBlank() == true
     }
 
     private fun JsonObject?.hasPrimitive(name: String): Boolean {
-        return this?.get(name)?.isJsonPrimitive == true
+        return this?.get(name).let { it is JsonPrimitive && it != JsonNull }
     }
 
     private inline fun <T> JmxResult<T>.unwrapOrReturn(returnFailure: (JmxResult.Failure) -> Nothing): T {
@@ -204,7 +212,7 @@ class ChapterTemplateParser(
 
     private fun parseAssignedObjectOrNull(html: String, name: String): JsonObject? {
         val json = extractAssignedObject(html, name) ?: return null
-        return runCatching { gson.fromJson(json, JsonObject::class.java) }.getOrNull()
+        return runCatching { this.json.parseWireElement(json).jsonObject }.getOrNull()
     }
 
     private fun findAssignedInt(html: String, name: String): Int? {

@@ -2,13 +2,17 @@ package dev.jmx.client
 
 import android.content.Context
 import androidx.core.content.edit
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import org.json.JSONArray
-import org.json.JSONObject
 import java.util.Locale
 import java.util.UUID
 import kotlin.math.pow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * 书架排序字段。[defaultDirection] 是该字段在「正序」下的自然顺序：
@@ -414,25 +418,23 @@ internal class BookshelfRepository(
 
     private fun readEntries(): List<BookshelfEntry> {
         val encoded = preferences.getString(BOOKSHELF_ENTRIES_KEY, null) ?: return emptyList()
-        return runCatching { JSONArray(encoded).toBookshelfEntries() }.getOrDefault(emptyList())
+        return runCatching { parseJsonArray(encoded).toBookshelfEntries() }.getOrDefault(emptyList())
     }
 
     private fun writeEntries(entries: List<BookshelfEntry>) {
         val storedEntries = entries.take(MAX_BOOKSHELF_ENTRIES)
-        val array = JSONArray()
-        storedEntries.forEach { array.put(it.toJson()) }
+        val array = JsonArray(storedEntries.map { it.toJson() })
         preferences.edit { putString(BOOKSHELF_ENTRIES_KEY, array.toString()) }
         _albumIds.value = storedEntries.mapTo(hashSetOf()) { it.albumId }.toSet()
     }
 
     private fun readGroups(): List<BookshelfGroup> {
         val encoded = preferences.getString(BOOKSHELF_GROUPS_KEY, null) ?: return emptyList()
-        return runCatching { JSONArray(encoded).toBookshelfGroups() }.getOrDefault(emptyList())
+        return runCatching { parseJsonArray(encoded).toBookshelfGroups() }.getOrDefault(emptyList())
     }
 
     private fun writeGroups(groups: List<BookshelfGroup>) {
-        val array = JSONArray()
-        groups.take(BOOKSHELF_GROUP_SAFETY_LIMIT).forEach { array.put(it.toJson()) }
+        val array = JsonArray(groups.take(BOOKSHELF_GROUP_SAFETY_LIMIT).map { it.toJson() })
         preferences.edit { putString(BOOKSHELF_GROUPS_KEY, array.toString()) }
     }
 
@@ -603,7 +605,7 @@ internal fun HomeAlbum.matchesBookshelfPickerQuery(query: String): Boolean {
     }
 }
 
-private fun BookshelfEntry.toJson(): JSONObject = JSONObject().apply {
+private fun BookshelfEntry.toJson(): JsonObject = buildJsonObject {
     put("album_id", albumId)
     put("name", name)
     put("author", author)
@@ -611,7 +613,7 @@ private fun BookshelfEntry.toJson(): JSONObject = JSONObject().apply {
     put("image_host", imageHost)
     put("added_at", addedAt)
     put("updated_at", updatedAt)
-    put("group_ids", JSONArray(groupIds.toList()))
+    put("group_ids", groupIds.toList().toJsonArray())
     lastReadAt?.let { put("last_read_at", it) }
     lastChapterId?.let { put("last_chapter_id", it) }
     lastChapterName?.let { put("last_chapter_name", it) }
@@ -619,81 +621,81 @@ private fun BookshelfEntry.toJson(): JSONObject = JSONObject().apply {
     lastPageCount?.let { put("last_page_count", it) }
 }
 
-private fun BookshelfGroup.toJson(): JSONObject = JSONObject().apply {
+private fun BookshelfGroup.toJson(): JsonObject = buildJsonObject {
     put("id", id)
     put("name", name)
     put("match_favorites_by_tags", matchFavoritesByTags)
-    put("tag_rules", JSONArray(tagRules))
+    put("tag_rules", tagRules.toJsonArray())
     put("match_by_authors", matchByAuthors)
-    put("author_rules", JSONArray(authorRules))
+    put("author_rules", authorRules.toJsonArray())
     put("author_match_source", authorMatchSource.name)
     put("created_at", createdAt)
     put("updated_at", updatedAt)
 }
 
-private fun JSONObject.toBookshelfEntryOrNull(): BookshelfEntry? {
-    val albumId = optString("album_id").trim().takeIf(String::isNotEmpty) ?: return null
-    val addedAt = optLong("added_at", 0L)
+private fun JsonObject.toBookshelfEntryOrNull(): BookshelfEntry? {
+    val albumId = stringValue("album_id").trim().takeIf(String::isNotEmpty) ?: return null
+    val addedAt = longValue("added_at", 0L)
     return BookshelfEntry(
         albumId = albumId,
-        name = optString("name").trim().ifBlank { "JM$albumId" },
-        author = optString("author").trim().ifBlank { "未知作者" },
-        coverUrl = optString("cover_url").trim(),
-        imageHost = optString("image_host").trim(),
+        name = stringValue("name").trim().ifBlank { "JM$albumId" },
+        author = stringValue("author").trim().ifBlank { "未知作者" },
+        coverUrl = stringValue("cover_url").trim(),
+        imageHost = stringValue("image_host").trim(),
         addedAt = addedAt,
-        updatedAt = optLong("updated_at", addedAt),
+        updatedAt = longValue("updated_at", addedAt),
         groupIds = optStringList("group_ids").toSet(),
         lastReadAt = optNullableLong("last_read_at"),
-        lastChapterId = optString("last_chapter_id").trim().takeIf(String::isNotEmpty),
-        lastChapterName = optString("last_chapter_name").trim().takeIf(String::isNotEmpty),
-        lastPageIndex = optInt("last_page_index", 0).coerceAtLeast(0),
+        lastChapterId = stringValue("last_chapter_id").trim().takeIf(String::isNotEmpty),
+        lastChapterName = stringValue("last_chapter_name").trim().takeIf(String::isNotEmpty),
+        lastPageIndex = intValue("last_page_index", 0).coerceAtLeast(0),
         lastPageCount = optNullableInt("last_page_count")?.takeIf { it > 0 },
     )
 }
 
-private fun JSONObject.toBookshelfGroupOrNull(): BookshelfGroup? {
-    val id = optString("id").trim().takeIf(String::isNotEmpty) ?: return null
-    val name = optString("name").trim().takeIf(String::isNotEmpty) ?: return null
-    val createdAt = optLong("created_at", 0L)
+private fun JsonObject.toBookshelfGroupOrNull(): BookshelfGroup? {
+    val id = stringValue("id").trim().takeIf(String::isNotEmpty) ?: return null
+    val name = stringValue("name").trim().takeIf(String::isNotEmpty) ?: return null
+    val createdAt = longValue("created_at", 0L)
     return BookshelfGroup(
         id = id,
         name = name,
-        matchFavoritesByTags = optBoolean("match_favorites_by_tags", false),
+        matchFavoritesByTags = booleanValue("match_favorites_by_tags", false),
         tagRules = optStringList("tag_rules").mapNotNull(::normalizeSearchTag).distinct(),
-        matchByAuthors = optBoolean("match_by_authors", false),
+        matchByAuthors = booleanValue("match_by_authors", false),
         authorRules = optStringList("author_rules").mapNotNull(::normalizeSearchTag).distinct(),
         authorMatchSource = BookshelfAuthorMatchSource.entries.firstOrNull {
-            it.name == optString("author_match_source")
+            it.name == stringValue("author_match_source")
         } ?: BookshelfAuthorMatchSource.FAVORITES,
         createdAt = createdAt,
-        updatedAt = optLong("updated_at", createdAt),
+        updatedAt = longValue("updated_at", createdAt),
     )
 }
 
-private fun JSONObject.optStringList(name: String): List<String> {
-    val array = optJSONArray(name) ?: return emptyList()
+private fun JsonObject.optStringList(name: String): List<String> {
+    val array = arrayOrNull(name) ?: return emptyList()
     return buildList {
-        repeat(array.length()) { index ->
-            array.optString(index).trim().takeIf(String::isNotEmpty)?.let(::add)
+        repeat(array.size) { index ->
+            array.stringValue(index).trim().takeIf(String::isNotEmpty)?.let(::add)
         }
     }
 }
 
-private fun JSONObject.optNullableLong(name: String): Long? =
-    if (has(name) && !isNull(name)) optLong(name) else null
+private fun JsonObject.optNullableLong(name: String): Long? =
+    if (containsKey(name) && get(name) != JsonNull) longValue(name) else null
 
-private fun JSONObject.optNullableInt(name: String): Int? =
-    if (has(name) && !isNull(name)) optInt(name) else null
+private fun JsonObject.optNullableInt(name: String): Int? =
+    if (containsKey(name) && get(name) != JsonNull) intValue(name) else null
 
-private fun JSONArray.toBookshelfEntries(): List<BookshelfEntry> {
+private fun JsonArray.toBookshelfEntries(): List<BookshelfEntry> {
     val parsed = mutableListOf<BookshelfEntry>()
-    repeat(length()) { index -> optJSONObject(index)?.toBookshelfEntryOrNull()?.let(parsed::add) }
+    repeat(size) { index -> objectOrNull(index)?.toBookshelfEntryOrNull()?.let(parsed::add) }
     return parsed.distinctBy(BookshelfEntry::albumId)
 }
 
-private fun JSONArray.toBookshelfGroups(): List<BookshelfGroup> {
+private fun JsonArray.toBookshelfGroups(): List<BookshelfGroup> {
     val parsed = mutableListOf<BookshelfGroup>()
-    repeat(length()) { index -> optJSONObject(index)?.toBookshelfGroupOrNull()?.let(parsed::add) }
+    repeat(size) { index -> objectOrNull(index)?.toBookshelfGroupOrNull()?.let(parsed::add) }
     return parsed.distinctBy(BookshelfGroup::id)
 }
 
@@ -763,40 +765,36 @@ internal fun moveGroupOrder(order: List<String>, from: Int, to: Int): List<Strin
 }
 
 internal fun encodeBookshelfGroupOrder(orderedIds: List<String>): String =
-    JSONArray(orderedIds).toString()
+    orderedIds.toJsonArray().toString()
 
 internal fun decodeBookshelfGroupOrder(encoded: String?): List<String> {
-    val array = runCatching { JSONArray(encoded ?: return emptyList()) }.getOrNull() ?: return emptyList()
+    val array = runCatching { parseJsonArray(encoded ?: return emptyList()) }.getOrNull() ?: return emptyList()
     return buildList {
-        repeat(array.length()) { index ->
-            array.optString(index).trim().takeIf(String::isNotEmpty)?.let(::add)
+        repeat(array.size) { index ->
+            array.stringValue(index).trim().takeIf(String::isNotEmpty)?.let(::add)
         }
     }.distinct()
 }
 
 internal fun encodeBookshelfGroupUsage(usage: List<BookshelfGroupUsage>): String {
-    val array = JSONArray()
-    usage.forEach { item ->
-        array.put(
-            JSONObject().apply {
-                put("id", item.id)
-                put("score", item.score)
-                put("updated_at", item.updatedAt)
-            },
-        )
-    }
-    return array.toString()
+    return JsonArray(usage.map { item ->
+        buildJsonObject {
+            put("id", item.id)
+            put("score", item.score)
+            put("updated_at", item.updatedAt)
+        }
+    }).toString()
 }
 
 internal fun decodeBookshelfGroupUsage(encoded: String?): List<BookshelfGroupUsage> {
-    val array = runCatching { JSONArray(encoded ?: return emptyList()) }.getOrNull() ?: return emptyList()
+    val array = runCatching { parseJsonArray(encoded ?: return emptyList()) }.getOrNull() ?: return emptyList()
     val parsed = mutableListOf<BookshelfGroupUsage>()
-    repeat(array.length()) { index ->
-        val item = array.optJSONObject(index) ?: return@repeat
-        val id = item.optString("id").trim().takeIf(String::isNotEmpty) ?: return@repeat
-        val score = item.optDouble("score", 0.0)
+    repeat(array.size) { index ->
+        val item = array.objectOrNull(index) ?: return@repeat
+        val id = item.stringValue("id").trim().takeIf(String::isNotEmpty) ?: return@repeat
+        val score = item.doubleValue("score", 0.0)
         if (!score.isFinite() || score <= 0.0) return@repeat
-        parsed += BookshelfGroupUsage(id = id, score = score, updatedAt = item.optLong("updated_at", 0L))
+        parsed += BookshelfGroupUsage(id = id, score = score, updatedAt = item.longValue("updated_at", 0L))
     }
     return parsed.distinctBy(BookshelfGroupUsage::id)
 }
@@ -919,20 +917,19 @@ internal fun mergeBookshelfWith(
  * 所以格式天然可逆：导出的文件导回来能完整还原书架。
  */
 internal fun encodeBookshelfSnapshot(snapshot: BookshelfSnapshot, exportedAt: Long): String {
-    val entries = JSONArray()
-    snapshot.entries.take(MAX_BOOKSHELF_ENTRIES).forEach { entries.put(it.toJson()) }
-    val groups = JSONArray()
-    snapshot.groups.take(BOOKSHELF_GROUP_SAFETY_LIMIT).forEach { groups.put(it.toJson()) }
-    return JSONObject().apply {
+    val entries = JsonArray(snapshot.entries.take(MAX_BOOKSHELF_ENTRIES).map { it.toJson() })
+    val groups = JsonArray(snapshot.groups.take(BOOKSHELF_GROUP_SAFETY_LIMIT).map { it.toJson() })
+    val root = buildJsonObject {
         put("format", BOOKSHELF_TRANSFER_FORMAT)
         put("version", BOOKSHELF_TRANSFER_VERSION)
         put("app", "JMComicX")
         put("exported_at", exportedAt)
-        put("entry_count", entries.length())
-        put("group_count", groups.length())
+        put("entry_count", entries.size)
+        put("group_count", groups.size)
         put("groups", groups)
         put("entries", entries)
-    }.toString(2)
+    }
+    return PrettyJson.encodeToString(JsonObject.serializer(), root)
 }
 
 /**
@@ -942,11 +939,11 @@ internal fun encodeBookshelfSnapshot(snapshot: BookshelfSnapshot, exportedAt: Lo
  * 也能读出它认识的那部分，而不是直接告诉用户"文件不支持"。
  */
 internal fun decodeBookshelfSnapshot(text: String): BookshelfSnapshot? {
-    val root = runCatching { JSONObject(text) }.getOrNull() ?: return null
-    if (root.optString("format") != BOOKSHELF_TRANSFER_FORMAT) return null
+    val root = runCatching { parseJsonObject(text) }.getOrNull() ?: return null
+    if (root.stringValue("format") != BOOKSHELF_TRANSFER_FORMAT) return null
     return BookshelfSnapshot(
-        entries = root.optJSONArray("entries")?.toBookshelfEntries() ?: emptyList(),
-        groups = root.optJSONArray("groups")?.toBookshelfGroups() ?: emptyList(),
+        entries = root.arrayOrNull("entries")?.toBookshelfEntries() ?: emptyList(),
+        groups = root.arrayOrNull("groups")?.toBookshelfGroups() ?: emptyList(),
     )
 }
 

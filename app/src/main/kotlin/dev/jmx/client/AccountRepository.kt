@@ -2,9 +2,9 @@ package dev.jmx.client
 
 import android.content.Context
 import androidx.core.content.edit
-import com.google.gson.Gson
 import com.github.houbb.opencc4j.util.ZhConverterUtil
 import dev.jmx.client.core.api.UserProfile
+import dev.jmx.client.core.json.JmxJson
 import dev.jmx.client.core.result.JmxError
 import dev.jmx.client.core.result.JmxResult
 import dev.jmx.client.core.runtime.JmxCore
@@ -12,32 +12,37 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
+@Serializable
 internal data class AccountProfile(
-    val id: Int?,
+    val id: Int? = null,
     val username: String,
-    val email: String?,
-    val avatar: String?,
-    val level: Int?,
-    val levelName: String?,
-    val currentLevelExp: Int?,
-    val nextLevelExp: Int?,
-    val expPercent: Double?,
-    val currentFavoriteCount: Int?,
-    val maxFavoriteCount: Int?,
-    val coin: Int?,
+    val email: String? = null,
+    val avatar: String? = null,
+    val level: Int? = null,
+    val levelName: String? = null,
+    val currentLevelExp: Int? = null,
+    val nextLevelExp: Int? = null,
+    val expPercent: Double? = null,
+    val currentFavoriteCount: Int? = null,
+    val maxFavoriteCount: Int? = null,
+    val coin: Int? = null,
 )
 
 internal class AccountRepository(
     context: Context,
     private val core: JmxCore,
-    private val gson: Gson = Gson(),
+    private val json: Json = JmxJson,
 ) {
     private val preferences = context.applicationContext.getSharedPreferences(
         ACCOUNT_PREFERENCES,
         Context.MODE_PRIVATE,
     )
-    private val credentialStore = SecureCredentialStore(context, gson)
+    private val credentialStore = SecureCredentialStore(context, json)
     private val authenticationMutex = Mutex()
     @Volatile
     private var authenticationGeneration = 0L
@@ -70,7 +75,7 @@ internal class AccountRepository(
 
     private fun cachedProfile(): AccountProfile? {
         val encoded = preferences.getString(ACCOUNT_PROFILE_KEY, null) ?: return null
-        return runCatching { gson.fromJson(encoded, AccountProfile::class.java) }
+        return runCatching { json.decodeFromString<AccountProfile>(encoded) }
             .getOrNull()
             ?.takeIf { it.username.isNotBlank() }
     }
@@ -78,7 +83,7 @@ internal class AccountRepository(
     fun lastUsername(): String = preferences.getString(ACCOUNT_LAST_USERNAME_KEY, "").orEmpty()
 
     fun update(profile: AccountProfile) {
-        preferences.edit { putString(ACCOUNT_PROFILE_KEY, gson.toJson(profile)) }
+        preferences.edit { putString(ACCOUNT_PROFILE_KEY, json.encodeToString(profile)) }
     }
 
     suspend fun login(username: String, password: String): JmxResult<AccountProfile> =

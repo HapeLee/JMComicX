@@ -6,9 +6,7 @@ import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import androidx.core.content.edit
-import com.google.gson.Gson
-import com.google.gson.JsonParser
-import com.google.gson.reflect.TypeToken
+import dev.jmx.client.core.json.JmxJson
 import java.security.KeyStore
 import java.security.SecureRandom
 import javax.crypto.Cipher
@@ -16,7 +14,15 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
+@Serializable
 internal data class AccountCredentials(
     val username: String,
     val password: String,
@@ -24,7 +30,7 @@ internal data class AccountCredentials(
 
 internal class SecureCredentialStore(
     context: Context,
-    private val gson: Gson = Gson(),
+    private val json: Json = JmxJson,
 ) {
     private val applicationContext = context.applicationContext
     private val preferences = applicationContext.getSharedPreferences(
@@ -69,7 +75,7 @@ internal class SecureCredentialStore(
     fun save(credentials: AccountCredentials) {
         if (credentials.username.isBlank() || credentials.password.isBlank()) return
         // 凭据持久化为尽力而为：登录成功后写入失败不应导致闪退，最坏情况是这台设备记不住密码。
-        val encrypted = encryptCredentials(gson.toJson(credentials)) ?: return
+        val encrypted = encryptCredentials(json.encodeToString(credentials)) ?: return
         preferences.edit {
             putString(CREDENTIAL_KEY, encrypted)
             putBoolean(LEGACY_MIGRATION_COMPLETE_KEY, true)
@@ -87,8 +93,7 @@ internal class SecureCredentialStore(
         val encrypted = legacyPreferences.getString(LEGACY_SEARCH_HISTORY_KEY, null) ?: return emptyList()
         val json = keystoreDecrypt(encrypted, LEGACY_KEY_ALIAS) ?: return emptyList()
         return runCatching {
-            val type = object : TypeToken<List<String>>() {}.type
-            gson.fromJson<List<String>>(json, type)
+            this.json.decodeFromString<List<String>>(json)
         }.getOrDefault(emptyList())
             .map(String::trim)
             .filter(String::isNotEmpty)
@@ -99,16 +104,16 @@ internal class SecureCredentialStore(
         val encrypted = legacyPreferences.getString(LEGACY_USER_KEY, null) ?: return null
         val json = keystoreDecrypt(encrypted, LEGACY_KEY_ALIAS) ?: return null
         return runCatching {
-            val root = JsonParser.parseString(json).asJsonObject
+            val root = this.json.parseToJsonElement(json).jsonObject
             AccountCredentials(
-                username = root["username"]?.asString.orEmpty().trim(),
-                password = root["password"]?.asString.orEmpty(),
+                username = root["username"]?.jsonPrimitive?.contentOrNull.orEmpty().trim(),
+                password = root["password"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             )
         }.getOrNull()?.takeIf { it.username.isNotBlank() && it.password.isNotBlank() }
     }
 
     private fun parseCredentials(json: String): AccountCredentials? =
-        runCatching { gson.fromJson(json, AccountCredentials::class.java) }
+        runCatching { this.json.decodeFromString<AccountCredentials>(json) }
             .getOrNull()
             ?.takeIf { it.username.isNotBlank() && it.password.isNotBlank() }
 

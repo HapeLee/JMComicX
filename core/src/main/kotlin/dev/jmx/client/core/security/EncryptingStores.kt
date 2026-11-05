@@ -1,15 +1,16 @@
 package dev.jmx.client.core.security
 
-import com.google.gson.Gson
-import com.google.gson.GsonBuilder
-import com.google.gson.reflect.TypeToken
 import dev.jmx.client.core.cache.KeyValueStore
 import dev.jmx.client.core.download.ChapterDownloadTaskStore
 import dev.jmx.client.core.download.PersistedChapterDownloadTask
+import dev.jmx.client.core.json.JmxJson
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 class EncryptingKeyValueStore(
     private val delegate: KeyValueStore,
@@ -37,10 +38,9 @@ class EncryptingKeyValueStore(
 class EncryptingChapterDownloadTaskStore(
     private val file: Path,
     private val cipher: ByteCipher,
-    private val gson: Gson = GsonBuilder().create()
+    private val json: Json = JmxJson
 ) : ChapterDownloadTaskStore {
     private val lock = Any()
-    private val listType = object : TypeToken<List<PersistedChapterDownloadTask>>() {}.type
 
     override fun loadAll(): List<PersistedChapterDownloadTask> = synchronized(lock) {
         if (!Files.isRegularFile(file)) return emptyList()
@@ -48,22 +48,22 @@ class EncryptingChapterDownloadTaskStore(
             val decrypted = cipher.decrypt(Files.readAllBytes(file))
             val json = String(decrypted, StandardCharsets.UTF_8)
             if (json.isBlank()) emptyList()
-            else gson.fromJson<List<PersistedChapterDownloadTask>>(json, listType).orEmpty()
+            else this.json.decodeFromString<List<PersistedChapterDownloadTask>>(json)
         }.getOrDefault(emptyList())
     }
 
     override fun saveAll(tasks: List<PersistedChapterDownloadTask>) = synchronized(lock) {
-        writeEncrypted(gson.toJson(tasks))
+        writeEncrypted(json.encodeToString(tasks))
     }
 
     override fun save(task: PersistedChapterDownloadTask) = synchronized(lock) {
         val all = loadAll().associateBy { it.id }.toMutableMap()
         all[task.id] = task
-        writeEncrypted(gson.toJson(all.values.sortedBy { it.createdAtMillis }))
+        writeEncrypted(json.encodeToString(all.values.sortedBy { it.createdAtMillis }))
     }
 
     override fun delete(taskId: String) = synchronized(lock) {
-        writeEncrypted(gson.toJson(loadAll().filterNot { it.id == taskId }))
+        writeEncrypted(json.encodeToString(loadAll().filterNot { it.id == taskId }))
     }
 
     override fun clear() = synchronized(lock) {

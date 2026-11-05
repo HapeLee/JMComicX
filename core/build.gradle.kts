@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 kotlin {
@@ -12,7 +13,7 @@ kotlin {
 dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.okhttp)
-    implementation(libs.gson)
+    implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.junit)
     testImplementation(libs.mockwebserver)
     // 仅 JVM 真实阅读测试需要 ImageIO WebP 插件；Android 使用 Coil/Bitmap 解码。

@@ -1,0 +1,24 @@
+package io.kazusa.jmcomic.core.chapter
+
+import io.kazusa.jmcomic.core.download.DownloadObserver
+import io.kazusa.jmcomic.core.download.ImageHttpHeaders
+import io.kazusa.jmcomic.core.image.ImageDownloadRequest
+
+fun ChapterTemplate.toImageDownloadRequests(
+    headers: Map<String, String> = ImageHttpHeaders.default(refererHost = imageHost),
+    acceptedContentTypes: Set<String> = setOf("image/*"),
+    maxBytes: Long? = null,
+    observerFactory: (index: Int, url: String) -> DownloadObserver = { _, _ -> DownloadObserver.None }
+): List<ImageDownloadRequest> {
+    return imageUrls.mapIndexed { index, url ->
+        ImageDownloadRequest(
+            sourceUrl = url,
+            albumId = albumId,
+            scrambleId = scrambleId,
+            headers = headers,
+            acceptedContentTypes = acceptedContentTypes,
+            maxBytes = maxBytes,
+            observer = observerFactory(index, url)
+        )
+    }
+}

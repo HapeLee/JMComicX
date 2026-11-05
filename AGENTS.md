@@ -16,9 +16,9 @@ JMComicX 是使用 Kotlin、Jetpack Compose 与 Compose Miuix 构建的 Android 
 ```
 JMComicX/
 ├── app/          Android APP、Compose 界面、导航
-│   └── src/main/kotlin/dev/jmx/client/
+│   └── src/main/kotlin/io/kazusa/jmcomic/
 ├── core/         协议、网络、加解密、线路、图片、会话（纯 Kotlin，不依赖 Android UI）
-│   └── src/main/kotlin/dev/jmx/client/core/
+│   └── src/main/kotlin/io/kazusa/jmcomic/core/
 ├── gradle/libs.versions.toml   依赖版本目录
 └── version.properties          统一版本号（VERSION_CODE / VERSION_NAME）
 ```
@@ -27,8 +27,8 @@ JMComicX/
 
 ### app 模块
 
-- **包名 / namespace**: `dev.jmx.client`
-- **applicationId**: `dev.jmx.client`（debug 包含 `.debug` 后缀：`dev.jmx.client.debug`，可与 release 并行安装）
+- **包名 / namespace**: `io.kazusa.jmcomic`
+- **applicationId**: `io.kazusa.jmcomic`（debug 包含 `.debug` 后缀：`io.kazusa.jmcomic.debug`，可与 release 并行安装）
 - 负责 Compose 页面、MIUIX 组件、导航、转场
 - 首页、搜索、详情、账号、签到、设置、阅读器、离线下载
 - Android Keystore 凭据加密、SharedPreferences、Coil 缓存
@@ -111,7 +111,7 @@ VERSION_CODE_BASE=1000000
 | `debug` | `COMIC_UPDATE_HINTS = true`（设置页显示更新提示自测入口） |
 | `release` | `COMIC_UPDATE_HINTS = false`、启用 R8 混淆与资源压缩 |
 
-debug 配置了 `applicationIdSuffix = ".debug"`（包名为 `dev.jmx.client.debug`），可与正式包并存安装。
+debug 配置了 `applicationIdSuffix = ".debug"`（包名为 `io.kazusa.jmcomic.debug`），可与正式包并存安装。
 
 ## CI / GitHub Actions
 

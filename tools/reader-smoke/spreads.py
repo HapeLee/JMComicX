@@ -8,8 +8,8 @@ def rotate(value):
     time.sleep(1.5)
 
 def launch(mode='LEFT_TO_RIGHT',page=2,double='AUTO',cover=True,wide=-1,chapter=1,seamless=True,background=True):
-    c.adb('shell','am','force-stop','dev.jmx.client.debug');c.adb('logcat','-c')
-    c.adb('shell','am','start','-W','-n','dev.jmx.client.debug/dev.jmx.client.ReaderModesSmokeActivity',
+    c.adb('shell','am','force-stop','io.kazusa.jmcomic.debug');c.adb('logcat','-c')
+    c.adb('shell','am','start','-W','-n','io.kazusa.jmcomic.debug/io.kazusa.jmcomic.ReaderModesSmokeActivity',
           '--es','mode',mode,'--es','double',double,'--ei','page',str(page),'--ei','chapter',str(chapter),
           '--ei','pages','6','--ei','wide',str(wide),'--ez','spreads','true','--ez','cover',str(cover).lower(),
           '--ez','seamless',str(seamless).lower(),'--ez','background',str(background).lower())
@@ -77,7 +77,7 @@ def suite():
 def zoom_checks():
     rotate(0);launch(double='ALWAYS')
     check('forced-dual-on-phone','smoke-1:2/6',[2,3])
-    c.adb('shell','am','start','-W','--activity-single-top','-n','dev.jmx.client.debug/dev.jmx.client.ReaderModesSmokeActivity','--es','gesture','pinch')
+    c.adb('shell','am','start','-W','--activity-single-top','-n','io.kazusa.jmcomic.debug/io.kazusa.jmcomic.ReaderModesSmokeActivity','--es','gesture','pinch')
     time.sleep(.8)
     c.swipe('left')
     c.check('dual-pinch-pans-whole-spread','smoke-1:2/6')

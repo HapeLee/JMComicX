@@ -187,13 +187,19 @@ Release 工作流通过以下 GitHub Actions Secrets 使用发布证书：
 ```text
 JMComicX/
 ├── app/                         Android APP 与 Compose 界面
-│   └── src/main/kotlin/dev/jmx/client/
+│   └── src/main/kotlin/io/kazusa/jmcomic/
 ├── core/                        协议、网络、加解密、线路、图片与诊断
-│   └── src/main/kotlin/dev/jmx/client/core/
+│   └── src/main/kotlin/io/kazusa/jmcomic/core/
 ├── gradle/libs.versions.toml    依赖版本目录
 ├── version.properties           统一版本号
 ├── README.md                    工程说明
 ```
+
+包名与 namespace 统一为 `io.kazusa.jmcomic`，debug 的 applicationId 为
+`io.kazusa.jmcomic.debug`。测试源码使用同一包路径；在 Android Studio 中打开
+`JMComicX` 根目录并同步 Gradle 即可。
+
+包名变更后会作为新应用安装，不能覆盖旧包，旧应用的数据不会自动迁入。
 
 ## 开源引用
 

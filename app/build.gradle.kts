@@ -72,7 +72,7 @@ val releaseSigningReady = releaseKeystoreFile.isFile &&
 
 @Suppress("UnstableApiUsage")
 android {
-    namespace = "dev.jmx.client"
+    namespace = "io.kazusa.jmcomic"
     buildToolsVersion = "37.0.0"
     compileSdk {
         version = release(37) {
@@ -81,7 +81,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "dev.jmx.client"
+        applicationId = "io.kazusa.jmcomic"
         minSdk = 33
         targetSdk = 37
         versionCode = appVersionCode

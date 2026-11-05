@@ -3,7 +3,7 @@ param([switch]$Clean)
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $manifestPath = Join-Path $repoRoot 'app/src/debug/AndroidManifest.xml'
-$activityPath = Join-Path $repoRoot 'app/src/debug/kotlin/dev/jmx/client/ReaderModesSmokeActivity.kt'
+$activityPath = Join-Path $repoRoot 'app/src/debug/kotlin/io/kazusa/jmcomic/ReaderModesSmokeActivity.kt'
 $expectedManifest = '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application><activity android:name=".ReaderModesSmokeActivity" android:exported="true" android:theme="@style/JmxTheme" /></application></manifest>'
 $expectedActivity = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'ReaderModesSmokeActivity.kt.template') -Raw
 

@@ -17,7 +17,7 @@ def layout(name):
 def progress():
  for attempt in range(32):
   time.sleep(.25)
-  pid=adb('shell','pidof','dev.jmx.client.debug').strip()
+  pid=adb('shell','pidof','io.kazusa.jmcomic.debug').strip()
   if not pid: raise AssertionError('Reader app is not running')
   log=adb('logcat','-d','--pid='+pid.split()[0],'-s','ReaderModeSmoke:I','AndroidRuntime:E')
   if 'FATAL EXCEPTION' in log: raise AssertionError(log[-8000:])
@@ -31,8 +31,8 @@ def check(name,expected):
  print('PASS',name,actual,flush=True)
  return d
 def launch(mode='LEFT_TO_RIGHT',chapter=1,page=1,seamless=True,missing=-1):
- adb('shell','am','force-stop','dev.jmx.client.debug');adb('logcat','-c')
- adb('shell','am','start','-W','-n','dev.jmx.client.debug/dev.jmx.client.ReaderModesSmokeActivity','--es','mode',mode,'--ei','chapter',str(chapter),'--ei','page',str(page),'--ez','seamless',str(seamless).lower(),'--ei','missing',str(missing))
+ adb('shell','am','force-stop','io.kazusa.jmcomic.debug');adb('logcat','-c')
+ adb('shell','am','start','-W','-n','io.kazusa.jmcomic.debug/io.kazusa.jmcomic.ReaderModesSmokeActivity','--es','mode',mode,'--ei','chapter',str(chapter),'--ei','page',str(page),'--ez','seamless',str(seamless).lower(),'--ei','missing',str(missing))
  time.sleep(1)
 def swipe(direction):
  coords={'left':(580,640,140,640),'right':(140,640,580,640),'up':(360,1000,360,300),'down':(360,300,360,1000)}[direction]
@@ -65,7 +65,7 @@ def scroll_until(name,direction,expected_prefix,original_prefix):
 def zoom_checks():
  launch('LEFT_TO_RIGHT')
  check('zoom-start','smoke-1:1/3')
- adb('shell','am','start','-W','--activity-single-top','-n','dev.jmx.client.debug/dev.jmx.client.ReaderModesSmokeActivity','--es','gesture','pinch')
+ adb('shell','am','start','-W','--activity-single-top','-n','io.kazusa.jmcomic.debug/io.kazusa.jmcomic.ReaderModesSmokeActivity','--es','gesture','pinch')
  time.sleep(.8)
  swipe('left');check('pinch-pan-keeps-page','smoke-1:1/3')
  adb('shell','input tap 360 640; sleep 0.08; input tap 360 640')

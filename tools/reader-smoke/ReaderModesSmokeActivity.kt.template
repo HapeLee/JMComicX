@@ -1,4 +1,4 @@
-package dev.jmx.client
+package io.kazusa.jmcomic
 
 import android.view.KeyEvent
 import android.view.MotionEvent

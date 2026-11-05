@@ -18,3 +18,8 @@ app/signing/
 *.jks
 *.keystore
 signing.properties
+
+# JVM crash reports and heap dumps
+hs_err_pid*.log
+replay_pid*.log
+*.hprof

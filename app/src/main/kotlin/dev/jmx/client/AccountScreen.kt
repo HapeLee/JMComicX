@@ -57,6 +57,7 @@ import top.yukonga.miuix.kmp.icon.extended.Download
 import top.yukonga.miuix.kmp.icon.extended.Favorites
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Recent
+import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Show
 import top.yukonga.miuix.kmp.icon.extended.Tasks
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -81,7 +82,9 @@ internal fun AccountScreen(
     onDaily: () -> Unit,
     onAbout: () -> Unit,
     onDownloads: () -> Unit,
+    onUpdates: () -> Unit,
     favoriteUpdateCount: Int = 0,
+    updateCount: Int = 0,
 ) {
     val avatarUrl = remember(profile?.avatar, imageHost) {
         resolveUserAvatarUrl(imageHost, profile?.avatar)
@@ -194,6 +197,12 @@ internal fun AccountScreen(
             Column {
                 SmallTitle(text = "内容")
                 Card(modifier = Modifier.fillMaxWidth()) {
+                    ArrowPreference(
+                        title = "更新列表",
+                        startAction = { AccountPreferenceIcon(MiuixIcons.Refresh, "更新列表") },
+                        endActions = { if (updateCount > 0) FavoriteUpdateBadge(count = updateCount) },
+                        onClick = onUpdates,
+                    )
                     ArrowPreference(
                         title = "漫画收藏",
                         startAction = { AccountPreferenceIcon(MiuixIcons.Favorites, "漫画收藏") },

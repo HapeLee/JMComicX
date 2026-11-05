@@ -1,7 +1,6 @@
 package dev.jmx.client
 
 import android.content.Context
-import dev.jmx.client.core.result.JmxResult
 import dev.jmx.client.core.runtime.JmxCore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -88,12 +87,14 @@ internal class AlbumUpdateCenter(
         _scanning.value = true
         try {
             val targets = LinkedHashSet<String>()
+            var favoritesFailed = false
             bookshelfRepository.entries().forEach { targets += it.albumId }
             // 收藏枚举失败（未登录、网络挂了）与"收藏真的是空"必须区分：前者不能拿来
             // 覆盖已落盘的收藏成员，也不能据此裁剪记录，否则一次抖动就会把收藏角标的
             // 依据抹掉。只有真正拿到收藏列表时，才刷新落盘的收藏成员。
             if (includeFavorites) {
                 val favorites = collectFavoriteAlbumIds()
+                favoritesFailed = favorites == null
                 if (favorites != null) {
                     targets += favorites
                     store.setFavoriteAlbumIds(favorites)
@@ -105,7 +106,7 @@ internal class AlbumUpdateCenter(
             // 期间发生的更新就永久漏报了。
             val keep = LinkedHashSet(targets).apply { addAll(store.favoriteAlbumIds()) }
             if (keep.isNotEmpty()) store.retainOnly(keep)
-            return scanner.scan(targets)
+            return scanner.scan(targets).copy(favoritesFailed = favoritesFailed)
         } finally {
             _scanning.value = false
             scanLock.unlock()
@@ -147,23 +148,13 @@ internal class AlbumUpdateCenter(
      * 调用方据此决定要不要把它当作完整的关注集合。中途某一页失败也算拿不到：
      * 半份收藏列表比没有更危险。
      */
-    private suspend fun collectFavoriteAlbumIds(): Set<String>? {
-        val ids = LinkedHashSet<String>()
-        var page = 1
-        while (page <= MAX_FAVORITE_PAGES) {
-            val result = accountDataRepository.loadCollection(
+    private suspend fun collectFavoriteAlbumIds(): Set<String>? =
+        loadFavoriteAlbumIds { page ->
+            accountDataRepository.loadCollection(
                 kind = AccountCollectionKind.FAVORITES,
                 page = page,
             )
-            val value = (result as? JmxResult.Success)?.value ?: return null
-            if (value.albums.isEmpty()) break
-            value.albums.forEach { ids += it.id }
-            val total = value.total
-            if (total != null && ids.size >= total) break
-            page++
         }
-        return ids
-    }
 }
 
 /**
@@ -173,6 +164,3 @@ internal class AlbumUpdateCenter(
  * 用户想立刻知道结果时有书架页的下拉刷新（force = true）兜着。
  */
 private const val MIN_SCAN_INTERVAL_MILLIS = 6L * 60 * 60 * 1000
-
-/** 收藏枚举的页数上限，纯粹防御畸形响应导致的死循环（每页 20，够到 2000 部）。 */
-private const val MAX_FAVORITE_PAGES = 100

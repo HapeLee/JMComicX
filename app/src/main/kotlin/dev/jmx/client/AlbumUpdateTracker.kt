@@ -20,6 +20,8 @@ internal data class AlbumUpdateRecord(
     val seenChapterCount: Int,
     val latestChapterCount: Int,
     val checkedAt: Long,
+    /** 最近发现新增章节的时间；旧记录无法还原时为 0，不冒充服务端更新时间。 */
+    val detectedAt: Long = 0L,
 ) {
     /**
      * 待提示的新增话数。
@@ -77,11 +79,7 @@ internal class AlbumUpdateStore(context: Context) {
                 if (albumId.isEmpty()) return@forEach
                 val count = rawCount.coerceAtLeast(0)
                 val existing = current[albumId]
-                current[albumId] = if (existing == null) {
-                    AlbumUpdateRecord(albumId, count, count, at)
-                } else {
-                    existing.copy(latestChapterCount = count, checkedAt = at)
-                }
+                current[albumId] = observeAlbumUpdate(existing, albumId, count, at)
             }
             writeRecords(current)
         }
@@ -180,6 +178,7 @@ internal class AlbumUpdateStore(context: Context) {
                     seenChapterCount = (latest - chapters).coerceAtLeast(0),
                     latestChapterCount = latest.coerceAtLeast(chapters),
                     checkedAt = at,
+                    detectedAt = at,
                 )
                 affected++
             }
@@ -244,6 +243,7 @@ internal fun encodeAlbumUpdateRecords(records: Map<String, AlbumUpdateRecord>): 
             put("seen", record.seenChapterCount)
             put("latest", record.latestChapterCount)
             put("checkedAt", record.checkedAt)
+            put("detectedAt", record.detectedAt)
         }
     }).toString()
 }
@@ -263,6 +263,7 @@ internal fun decodeAlbumUpdateRecords(raw: String): Map<String, AlbumUpdateRecor
             seenChapterCount = seen,
             latestChapterCount = latest,
             checkedAt = item.longValue("checkedAt", 0L),
+            detectedAt = item.longValue("detectedAt", 0L),
         )
     }
     return result
@@ -273,3 +274,18 @@ private const val ALBUM_UPDATE_RECORDS_KEY = "records"
 private const val ALBUM_UPDATE_LAST_SCAN_KEY = "last_scan_at"
 private const val ALBUM_UPDATE_FAVORITES_KEY = "favorite_ids"
 private const val MAX_ALBUM_UPDATE_RECORDS = 1000
+
+/** 只有章节增加才移动发现时间；重复扫描不能把旧更新推到列表顶部。 */
+internal fun observeAlbumUpdate(
+    previous: AlbumUpdateRecord?,
+    albumId: String,
+    chapterCount: Int,
+    at: Long,
+): AlbumUpdateRecord {
+    val count = chapterCount.coerceAtLeast(0)
+    return previous?.copy(
+        latestChapterCount = count,
+        checkedAt = at,
+        detectedAt = if (count > previous.latestChapterCount && count > previous.seenChapterCount) at else previous.detectedAt,
+    ) ?: AlbumUpdateRecord(albumId, count, count, at, detectedAt = 0L)
+}

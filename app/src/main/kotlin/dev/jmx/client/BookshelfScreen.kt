@@ -129,6 +129,7 @@ internal fun BookshelfScreen(
     liftedAlbumId: String?,
     onAlbumSelected: (HomeAlbum, Rect) -> Unit,
     onOpenGroupOrder: () -> Unit = {},
+    onOpenUpdates: () -> Unit = {},
     pendingGroupId: String? = null,
     onPendingGroupConsumed: () -> Unit = {},
     barBackdrop: top.yukonga.miuix.kmp.blur.LayerBackdrop? = null,
@@ -434,6 +435,7 @@ internal fun BookshelfScreen(
     }
     val menuEntry = DropdownEntry(
         items = buildList {
+            add(DropdownItem(text = "更新列表", summary = "查看书架与收藏的新增章节", onClick = onOpenUpdates))
             add(
                 DropdownItem(
                     text = "添加分组",

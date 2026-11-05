@@ -3,17 +3,21 @@ package dev.jmx.client.effect.liquid
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -162,5 +166,38 @@ fun LiquidGlassIcon(
             contentDescription = contentDescription,
             tint = tint
         )
+    }
+}
+
+/** 固定 Painter 节点，描边与实心淡入淡出；不在端点增删图标/阴影图层。 */
+@Composable
+internal fun LiquidGlassTransitionIcon(
+    outlinedIcon: ImageVector,
+    filledIcon: ImageVector,
+    selectionProgress: () -> Float,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    tint: Color = MiuixTheme.colorScheme.onSurface,
+) {
+    val outlinedPainter = rememberVectorPainter(outlinedIcon)
+    val filledPainter = rememberVectorPainter(filledIcon)
+    val progress = rememberUpdatedState(selectionProgress)
+    val painter = remember(outlinedPainter, filledPainter) {
+        CrossfadeIconPainter(outlinedPainter, filledPainter) { progress.value() }
+    }
+    LiquidGlassIcon(painter, contentDescription, modifier, tint)
+}
+
+private class CrossfadeIconPainter(
+    private val outlined: Painter,
+    private val filled: Painter,
+    private val progress: () -> Float,
+) : Painter() {
+    override val intrinsicSize: Size get() = outlined.intrinsicSize
+
+    override fun DrawScope.onDraw() {
+        val fraction = progress().coerceIn(0f, 1f)
+        with(outlined) { draw(size, alpha = 1f - fraction) }
+        with(filled) { draw(size, alpha = fraction) }
     }
 }

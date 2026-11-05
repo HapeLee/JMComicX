@@ -31,9 +31,9 @@ import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import dev.jmx.client.effect.liquid.animation.DampedDragAnimation
+import dev.jmx.client.NavigationTab
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.BadgedBox
-import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.abs
@@ -44,7 +44,7 @@ import com.kyant.backdrop.shadow.Shadow as BackdropShadow
 
 @Composable
 internal fun MatterLiquidGlassNavigationBar(
-    items: List<NavigationItem>,
+    items: List<NavigationTab>,
     selectedIndex: Int,
     onItemClick: (Int) -> Unit,
     backdrop: LayerBackdrop?,
@@ -86,7 +86,6 @@ internal fun MatterLiquidGlassNavigationBar(
     }
 
     var currentIndex by remember { mutableIntStateOf(selectedIndex) }
-    var dragging by remember { mutableStateOf(false) }
     val onItemClickUpdated by rememberUpdatedState(onItemClick)
 
     fun indexAt(positionX: Float): Int {
@@ -110,11 +109,9 @@ internal fun MatterLiquidGlassNavigationBar(
                 position.x in 0f..totalWidthPx
             },
             onDragStarted = { position ->
-                dragging = true
                 updateValue(indexAt(position.x).toFloat())
             },
             onDragStopped = {
-                dragging = false
                 val targetIndex = targetValue.roundToInt().coerceIn(0, tabsCount - 1)
                 if (currentIndex != targetIndex) {
                     currentIndex = targetIndex
@@ -126,7 +123,6 @@ internal fun MatterLiquidGlassNavigationBar(
                 }
             },
             onDragCancelled = {
-                dragging = false
                 updateValue(currentIndex.toFloat())
                 animationScope.launch {
                     offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f))
@@ -163,8 +159,11 @@ internal fun MatterLiquidGlassNavigationBar(
 
     val animatedPosition by remember(dampedDrag, positionFraction) {
         derivedStateOf {
-            if (dragging || dampedDrag.pressProgress > 0.01f) dampedDrag.value
-            else positionFraction?.invoke() ?: dampedDrag.value
+            matterTabPosition(
+                pagerPosition = positionFraction?.invoke(),
+                dragPosition = dampedDrag.value,
+                pressProgress = dampedDrag.pressProgress,
+            )
         }
     }
 
@@ -198,14 +197,15 @@ internal fun MatterLiquidGlassNavigationBar(
                 horizontalAlignment = CenterHorizontally,
             ) {
                 BadgedBox(badge = { badge(index)?.invoke() }) {
-                    LiquidGlassIcon(
+                    val selection = matterTabSelectionFraction(animatedPosition, index)
+                    val tint = androidx.compose.ui.graphics.lerp(tabContentColor, accentColor, selection)
+                    LiquidGlassTransitionIcon(
                         modifier = Modifier.size(24.dp),
-                        imageVector = item.icon,
-                        // Decorative: the adjacent label names the item; avoids TalkBack double-read.
+                        outlinedIcon = item.icon,
+                        filledIcon = item.selectedIcon,
+                        selectionProgress = { matterTabSelectionFraction(animatedPosition, index) },
                         contentDescription = null,
-                        tint = androidx.compose.ui.graphics.lerp(
-                            tabContentColor, accentColor, matterTabSelectionFraction(animatedPosition, index),
-                        ),
+                        tint = tint,
                     )
                 }
                 LiquidGlassText(
@@ -283,3 +283,11 @@ internal fun MatterLiquidGlassNavigationBar(
 
 internal fun matterTabSelectionFraction(position: Float, index: Int): Float =
     (1f - abs(position - index)).coerceIn(0f, 1f)
+
+/** Keep the pager/drag handoff continuous, including press/release and cancelled drags. */
+internal fun matterTabPosition(pagerPosition: Float?, dragPosition: Float, pressProgress: Float): Float =
+    androidx.compose.ui.util.lerp(
+        pagerPosition ?: dragPosition,
+        dragPosition,
+        pressProgress.coerceIn(0f, 1f),
+    )

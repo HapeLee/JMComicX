@@ -14,6 +14,7 @@ internal data class AlbumUpdateScanResult(
     val scanned: Int,
     val failed: Int,
     val pendingAlbums: Int,
+    val favoritesFailed: Boolean = false,
 ) {
     val attempted: Int get() = scanned + failed
 }

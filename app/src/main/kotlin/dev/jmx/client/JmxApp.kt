@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -37,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -70,7 +70,6 @@ import top.yukonga.miuix.kmp.basic.FloatingNavigationBarItem
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
-import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.TopAppBar
@@ -81,6 +80,8 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Contacts
 import top.yukonga.miuix.kmp.icon.extended.Home
 import top.yukonga.miuix.kmp.icon.extended.Notes
+import top.yukonga.miuix.kmp.icon.extended.NotesFill
+import top.yukonga.miuix.kmp.icon.extended.Recent
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.nav.core.navBackStackOf
@@ -94,17 +95,16 @@ internal fun JmxApp(
     themeMode: AppThemeMode,
     onThemeModeChanged: (AppThemeMode) -> Unit,
 ) {
-    val tabs = remember {
+    val homeOutlined = ImageVector.vectorResource(R.drawable.jmx_nav_home_outlined)
+    val profileFilled = ImageVector.vectorResource(R.drawable.jmx_nav_profile_filled)
+    val tabs = remember(homeOutlined, profileFilled) {
         listOf(
-            JmxTab("首页", MiuixIcons.Home),
-            JmxTab("书架", MiuixIcons.Notes),
-            JmxTab("我的", MiuixIcons.Contacts),
+            NavigationTab("首页", homeOutlined, MiuixIcons.Home),
+            NavigationTab("书架", MiuixIcons.Notes, MiuixIcons.NotesFill),
+            NavigationTab("我的", MiuixIcons.Contacts, profileFilled),
         )
     }
     val mainPagerState = rememberJmxMainPagerState(tabs.size)
-    val liquidNavigationItems = remember(tabs) {
-        tabs.map { NavigationItem(it.label, it.icon) }
-    }
     val routeStack = remember { navBackStackOf(JmxRoute.MAIN) }
 
     val context = LocalContext.current
@@ -235,11 +235,7 @@ internal fun JmxApp(
     var homeState by remember { mutableStateOf<HomeUiState>(HomeUiState.Loading) }
     var homeRequestId by rememberSaveable { mutableIntStateOf(0) }
     var isHomeRefreshing by remember { mutableStateOf(false) }
-    // 首页分类的分页状态提到这里：顶栏标签行与首页内容区共用同一个 PagerState，
-    // 标签指示器直接跟随分页进度，不再靠两份状态互相回写（那会滞后到分页停稳之后）。
-    val homePagerState = rememberPagerState {
-        (homeState as? HomeUiState.Content)?.categories?.size ?: 0
-    }
+    var selectedHomeCategoryId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingLoadMoreCategoryId by remember { mutableStateOf<String?>(null) }
     var detailRequest by remember { mutableStateOf<AlbumDetailTransitionRequest?>(null) }
     val readerOwner = LocalActivity.current as ViewModelStoreOwner
@@ -379,7 +375,7 @@ internal fun JmxApp(
         val wasRefreshing = isHomeRefreshing
         val previousCategoryId = (previousState as? HomeUiState.Content)
             ?.categories
-            ?.getOrNull(homePagerState.currentPage)
+            ?.firstOrNull { it.id == selectedHomeCategoryId }
             ?.id
         val updatedState = homeRepository.load(preloadCategoryId = previousCategoryId)
         homeState = when {
@@ -387,12 +383,9 @@ internal fun JmxApp(
             else -> updatedState
         }
         if (updatedState is HomeUiState.Content) {
-            val restoredPage = previousCategoryId
-                ?.let { id -> updatedState.categories.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
-                ?: 0
-            if (homePagerState.currentPage != restoredPage) {
-                homePagerState.scrollToPage(restoredPage)
-            }
+            selectedHomeCategoryId = updatedState.categories
+                .firstOrNull { it.id == selectedHomeCategoryId }
+                ?.id ?: updatedState.categories.firstOrNull()?.id
         }
         isHomeRefreshing = false
     }
@@ -448,7 +441,7 @@ internal fun JmxApp(
                                     1 -> bookshelfCategoryMenu.available
                                     else -> false
                                 }
-                                val categoryMotion = rememberMatterBarMotion(categoryButtonVisible, liquidNavigationItems.size)
+                                val categoryMotion = rememberMatterBarMotion(categoryButtonVisible, tabs.size)
                                 var navigationHeightPx by remember { mutableIntStateOf(0) }
                                 val categoryMenuBottomPadding = if (categoryMenuBesideNavigation) null else {
                                     with(LocalDensity.current) { navigationHeightPx.toDp() } + 12.dp
@@ -471,7 +464,7 @@ internal fun JmxApp(
                                                                     searchExpanded = false
                                                                     mainPagerState.animateToPage(index)
                                                                 },
-                                                                icon = tab.icon,
+                                                                icon = tab.iconFor(mainPagerState.selectedPage == index),
                                                                 label = tab.label,
                                                             )
                                                         }
@@ -503,7 +496,7 @@ internal fun JmxApp(
                                                                     searchExpanded = false
                                                                     mainPagerState.animateToPage(index)
                                                                 },
-                                                                icon = tab.icon,
+                                                                icon = tab.iconFor(mainPagerState.selectedPage == index),
                                                                 label = tab.label,
                                                             )
                                                         }
@@ -589,6 +582,8 @@ internal fun JmxApp(
                                                                         ) {
                                                                             TopAppBar(
                                                                                 title = "JMComicX",
+                                                                                subtitle = (homeCategories.firstOrNull { it.id == selectedHomeCategoryId }
+                                                                                    ?: homeCategories.firstOrNull())?.title.orEmpty(),
                                                                                 color = if (pageBackdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface,
                                                                                 scrollBehavior = homeScrollBehavior,
                                                                                 actions = {
@@ -617,8 +612,7 @@ internal fun JmxApp(
                                                                         backdrop = pageBackdrop,
                                                                         state = homeState,
                                                                         isRefreshing = isHomeRefreshing,
-                                                                        pagerState = homePagerState,
-                                                                        pagerEnabled = detailRequest == null && readerRequest == null,
+                                                                        selectedCategoryId = selectedHomeCategoryId,
                                                                         liftedAlbumId = detailRequest
                                                                             ?.takeIf {
                                                                                 it.origin == AlbumDetailOrigin.HOME && it.sourceBounds != null
@@ -706,6 +700,7 @@ internal fun JmxApp(
                                                     onOpenGroupOrder = {
                                                         navigateAccount(JmxRoute.GROUP_ORDER)
                                                     },
+                                                    onOpenUpdates = { navigateAccount(JmxRoute.UPDATES) },
                                                     pendingGroupId = pendingBookshelfGroupId,
                                                     onPendingGroupConsumed = { pendingBookshelfGroupId = null },
                                                     topBarBlurStyle = topBarBlurStyle,
@@ -769,6 +764,10 @@ internal fun JmxApp(
                                                                 onDaily = { openProtectedAccountPage(JmxRoute.DAILY) },
                                                                 onAbout = { navigateAccount(JmxRoute.ABOUT) },
                                                                 onDownloads = { navigateAccount(JmxRoute.DOWNLOADS) },
+                                                                onUpdates = { navigateAccount(JmxRoute.UPDATES) },
+                                                                updateCount = pendingAlbumUpdates(
+                                                                    albumUpdateRecords, coverBookshelfAlbumIds, coverFavoriteAlbumIds,
+                                                                ).size,
                                                                 // 只数收藏里的更新：仅在书架、没被收藏的漫画不该让收藏冒红点。
                                                                 // release 下 albumUpdateRecords 恒为空，角标自然不显示。
                                                                 favoriteUpdateCount = albumUpdateRecords
@@ -786,11 +785,12 @@ internal fun JmxApp(
                                 Box(Modifier.fillMaxSize()) {
                                     FloatingCategoryMenu(
                                         items = if (categoryTab == 1) bookshelfCategoryMenu.items else homeCategories.map { it.title },
-                                        selectedIndex = if (categoryTab == 1) bookshelfCategoryMenu.selectedIndex else homePagerState.currentPage,
+                                        selectedIndex = if (categoryTab == 1) bookshelfCategoryMenu.selectedIndex else homeCategories
+                                            .indexOfFirst { it.id == selectedHomeCategoryId }.coerceAtLeast(0),
                                         onSelect = { index ->
                                             if (categoryTab == 1) bookshelfCategoryMenu.select(index)
-                                            else coroutineScope.launch {
-                                                homePagerState.animateScrollToPage(index)
+                                            else {
+                                                homeCategories.getOrNull(index)?.let { selectedHomeCategoryId = it.id }
                                             }
                                         },
                                         backdrop = navigationBackdrop,
@@ -802,7 +802,7 @@ internal fun JmxApp(
                                     )
                                     if (categoryMenuBesideNavigation) {
                                         MatterLiquidGlassNavigationBar(
-                                            items = liquidNavigationItems,
+                                            items = tabs,
                                             modifier = Modifier.align(Alignment.BottomCenter).zIndex(1f),
                                             motion = categoryMotion,
                                             positionFraction = {
@@ -819,6 +819,33 @@ internal fun JmxApp(
                                     }
                                 }
                             }
+                            JmxRoute.UPDATES -> AlbumUpdatesScreen(
+                                records = albumUpdateRecords,
+                                bookshelfRepository = bookshelfRepository,
+                                detailRepository = detailRepository,
+                                bookshelfRevision = bookshelfRevision,
+                                favoriteIds = coverFavoriteAlbumIds,
+                                accountIdentity = coverMembershipIdentity,
+                                imageHost = homeRepository.currentImageHost,
+                                scanning = scanningAlbumUpdates,
+                                liftedAlbumId = detailRequest?.takeIf { it.origin == AlbumDetailOrigin.ACCOUNT }?.album?.id,
+                                onBack = ::navigateAccountBack,
+                                onRequireLogin = ::requestLogin,
+                                onAlbumSelected = { album, bounds ->
+                                    if (detailRequest == null) {
+                                        detailRequest = AlbumDetailTransitionRequest(album, bounds, AlbumDetailOrigin.ACCOUNT)
+                                    }
+                                },
+                                onRefresh = {
+                                    if (accountProfile != null) {
+                                        favoriteMembership.refresh { page ->
+                                            accountDataRepository.loadCollection(AccountCollectionKind.FAVORITES, page)
+                                        }
+                                    }
+                                    albumUpdateCenter.scan(includeFavorites = accountProfile != null, force = true)
+                                },
+                                topBarBlurStyle = topBarBlurStyle,
+                            )
                             JmxRoute.DOWNLOADS -> OfflineDownloadsScreen(
                                 state = OfflineDownloadsUiState(
                                     items = offlineAlbums.map { it.toDownloadUiModel() },
@@ -938,6 +965,9 @@ internal fun JmxApp(
                                             onBack = ::navigateAccountBack.takeIf { route == JmxRoute.FAVORITES },
                                             topBarActions = {
                                                 if (route == JmxRoute.FAVORITES && !favoriteSelection.selecting) {
+                                                    IconButton(onClick = { navigateAccount(JmxRoute.UPDATES) }) {
+                                                        Icon(MiuixIcons.Recent, "更新列表", tint = MiuixTheme.colorScheme.onBackground)
+                                                    }
                                                     FavoriteSortAction(
                                                         order = favoriteSortOrder,
                                                         direction = favoriteSortDirection,
@@ -975,6 +1005,7 @@ internal fun JmxApp(
                                             onDaily = { openProtectedAccountPage(JmxRoute.DAILY) },
                                             onAbout = { navigateAccount(JmxRoute.ABOUT) },
                                             onDownloads = { navigateAccount(JmxRoute.DOWNLOADS) },
+                                            onUpdates = { navigateAccount(JmxRoute.UPDATES) },
                                         )
                                         JmxRoute.THIRD_PARTY -> ThirdPartyListScreen(innerPadding)
                                         JmxRoute.SETTINGS -> SettingsScreen(
@@ -1029,6 +1060,7 @@ internal fun JmxApp(
                                         JmxRoute.MAIN,
                                         JmxRoute.ABOUT,
                                         JmxRoute.GROUP_ORDER,
+                                        JmxRoute.UPDATES,
                                         JmxRoute.DOWNLOADS,
                                         -> Unit
                                     }
@@ -1204,11 +1236,6 @@ internal fun JmxApp(
         )
     }
 }
-
-private data class JmxTab(
-    val label: String,
-    val icon: ImageVector,
-)
 
 private const val ACCOUNT_TAB_INDEX = 2
 private val AUTO_CHECK_IN_RETRY_DELAYS_MILLIS = longArrayOf(0L, 15_000L, 45_000L)

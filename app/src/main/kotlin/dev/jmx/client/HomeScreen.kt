@@ -2,6 +2,9 @@ package dev.jmx.client
 
 import android.content.Context
 import android.text.Html
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -10,19 +13,19 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,6 +35,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,11 +43,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -54,6 +60,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
 import coil3.ImageLoader
 import coil3.compose.AsyncImage
@@ -95,6 +102,9 @@ import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Image
+import top.yukonga.miuix.kmp.icon.extended.Notes
+import top.yukonga.miuix.kmp.icon.extended.Refresh
+import top.yukonga.miuix.kmp.icon.extended.Store
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -103,13 +113,12 @@ internal fun HomeScreen(
     backdrop: LayerBackdrop? = null,
     state: HomeUiState,
     isRefreshing: Boolean,
-    pagerState: PagerState,
+    selectedCategoryId: String?,
     liftedAlbumId: String?,
     onLoadMore: (String) -> Unit,
     onAlbumSelected: (HomeAlbum, Rect) -> Unit,
     onRefresh: () -> Unit,
     onRetry: () -> Unit,
-    pagerEnabled: Boolean = true,
     favoriteAlbumIds: Set<String> = emptySet(),
     bookshelfAlbumIds: Set<String> = emptySet(),
 ) {
@@ -118,8 +127,7 @@ internal fun HomeScreen(
             HomeUiState.Loading -> LoadingHome()
             is HomeUiState.Content -> HomeContent(
                 categories = state.categories,
-                pagerState = pagerState,
-                pagerEnabled = pagerEnabled,
+                selectedCategoryId = selectedCategoryId,
                 liftedAlbumId = liftedAlbumId,
                 onLoadMore = onLoadMore,
                 onAlbumSelected = onAlbumSelected,
@@ -148,8 +156,7 @@ internal fun HomeScreen(
 @Composable
 private fun HomeContent(
     categories: List<HomeCategory>,
-    pagerState: PagerState,
-    pagerEnabled: Boolean,
+    selectedCategoryId: String?,
     liftedAlbumId: String?,
     onLoadMore: (String) -> Unit,
     onAlbumSelected: (HomeAlbum, Rect) -> Unit,
@@ -161,28 +168,27 @@ private fun HomeContent(
     favoriteAlbumIds: Set<String>,
     bookshelfAlbumIds: Set<String>,
 ) {
-    // 与悬浮分类菜单共用 PagerState。按 Legado 的同向嵌套结构，内层使用官方默认连接，
-    // 速度返还适配集中挂在 JmxApp 的外层主 Pager，不在两层重复安装。
-    Box(modifier = Modifier.fillMaxSize()) {
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier
-                .fillMaxSize()
-                .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
-            userScrollEnabled = pagerEnabled,
-            key = { categories[it].id },
-        ) { page ->
+    val category = categories.firstOrNull { it.id == selectedCategoryId }
+        ?: categories.firstOrNull()
+        ?: return
+    val categoryStateHolder = rememberSaveableStateHolder()
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
+    ) {
+        // 分类菜单直接切换内容，每个分类分别保存列表滚动位置。
+        categoryStateHolder.SaveableStateProvider(category.id) {
             val pullToRefreshState = rememberPullToRefreshState()
             PullToRefresh(
-                isRefreshing = isRefreshing && pagerState.currentPage == page,
+                isRefreshing = isRefreshing,
                 onRefresh = onRefresh,
                 pullToRefreshState = pullToRefreshState,
                 refreshTexts = listOf("下拉刷新", "松开刷新", "正在刷新", "刷新完成"),
                 modifier = Modifier.fillMaxSize(),
             ) {
                 HomeAlbumGrid(
-                    category = categories[page],
-                    activePage = pagerState.currentPage == page,
+                    category = category,
                     onLoadMore = onLoadMore,
                     onAlbumSelected = onAlbumSelected,
                     liftedAlbumId = liftedAlbumId,
@@ -198,7 +204,6 @@ private fun HomeContent(
 
 @Composable
 private fun HomeAlbumGrid(
-    activePage: Boolean,
     category: HomeCategory,
     onLoadMore: (String) -> Unit,
     onAlbumSelected: (HomeAlbum, Rect) -> Unit,
@@ -209,7 +214,7 @@ private fun HomeAlbumGrid(
     bookshelfAlbumIds: Set<String>,
 ) {
     val gridState = rememberLazyGridState()
-    BindTopBarGlassScroll(gridState, active = activePage)
+    BindTopBarGlassScroll(gridState)
     val footerKey = remember(category.id) { "home-footer:${category.id}" }
     val footerVisible by remember(gridState, footerKey) {
         derivedStateOf {
@@ -332,20 +337,28 @@ internal fun AlbumItem(
                 )
                 // 角标画在封面外层：封面会被详情页转场"抬起"做共享元素动画，
                 // 画进 AlbumCover 里就会跟着一起飞走。
-                if (updateChapters > 0 && !coverLifted) {
-                    AlbumUpdateChapterBadge(
-                        chapters = updateChapters,
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(6.dp),
-                    )
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = updateChapters > 0 && !coverLifted,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
+                    enter = fadeIn(tween(200)),
+                    exit = fadeOut(tween(90)),
+                    label = "AlbumUpdateBadgeVisibility",
+                ) {
+                    if (updateChapters > 0) {
+                        AlbumUpdateChapterBadge(chapters = updateChapters)
+                    }
                 }
                 if (!coverLifted) selectionOverlay()
-                if (!coverLifted && (isFavorite || inBookshelf)) {
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = !coverLifted && (isFavorite || inBookshelf),
+                    modifier = Modifier.align(Alignment.BottomStart).padding(4.dp),
+                    enter = fadeIn(tween(200)),
+                    exit = fadeOut(tween(90)),
+                    label = "AlbumMembershipBadgesVisibility",
+                ) {
                     AlbumMembershipBadges(
                         isFavorite = isFavorite,
                         inBookshelf = inBookshelf,
-                        modifier = Modifier.align(Alignment.BottomStart).padding(6.dp),
                     )
                 }
             }
@@ -409,28 +422,37 @@ private fun AlbumMembershipBadges(
     inBookshelf: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (isFavorite) AlbumMembershipBadge("已收藏", Color(0xFF704300), Color(0xFFFFE0A3))
-        if (inBookshelf) AlbumMembershipBadge("在书架", MiuixTheme.colorScheme.primary, MiuixTheme.colorScheme.onPrimary)
-    }
-}
-
-@Composable
-private fun AlbumMembershipBadge(text: String, background: Color, foreground: Color) {
-    Surface(shape = RoundedCornerShape(5.dp), color = background) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-            style = MiuixTheme.textStyles.footnote2,
-            fontWeight = FontWeight.SemiBold,
-            color = foreground,
-            maxLines = 1,
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        if (isFavorite) AlbumMembershipBadge(
+            icon = MiuixIcons.Store,
+            description = "已收藏",
+        )
+        if (inBookshelf) AlbumMembershipBadge(
+            icon = MiuixIcons.Notes,
+            description = "已在书架",
         )
     }
 }
 
 @Composable
-private fun AlbumCover(
+private fun AlbumMembershipBadge(
+    icon: ImageVector,
+    description: String,
+) {
+    Surface(shape = RoundedCornerShape(4.dp), color = MiuixTheme.colorScheme.primary) {
+        Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = description,
+                modifier = Modifier.size(13.dp),
+                tint = MiuixTheme.colorScheme.onPrimary,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun AlbumCover(
     album: HomeAlbum,
     visible: Boolean,
     retryEnabled: Boolean,
@@ -496,26 +518,36 @@ private fun AlbumCover(
 }
 
 /**
- * 封面右上角的"更新 N 章"提示。
+ * 封面右上角的更新提示：刷新图标 + 新增章节数，完整章数保留在读屏说明中。
  *
- * 用 error 配色而不是 primary：这是"有新东西"的通知，和"已选中/已启用"不是一类语义，
- * 混用会让书架里选中态和更新态看起来一样。
+ * 统一跟随 Miuix primary 配色，与收藏和书架角标保持一致。
  */
 @Composable
 private fun AlbumUpdateChapterBadge(chapters: Int, modifier: Modifier = Modifier) {
     Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(6.dp),
-        color = MiuixTheme.colorScheme.error,
+        modifier = modifier.clearAndSetSemantics { contentDescription = "更新${chapters}章" },
+        shape = RoundedCornerShape(4.dp),
+        color = MiuixTheme.colorScheme.primary,
     ) {
-        Text(
-            text = "更新${if (chapters > 99) "99+" else chapters.toString()}章",
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            style = MiuixTheme.textStyles.footnote2,
-            fontWeight = FontWeight.SemiBold,
-            color = MiuixTheme.colorScheme.onError,
-            maxLines = 1,
-        )
+        Row(
+            modifier = Modifier.heightIn(min = 20.dp).padding(horizontal = 4.dp, vertical = 1.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = MiuixIcons.Refresh,
+                contentDescription = null,
+                modifier = Modifier.size(12.dp),
+                tint = MiuixTheme.colorScheme.onPrimary,
+            )
+            Text(
+                text = if (chapters > 99) "99+" else chapters.toString(),
+                style = MiuixTheme.textStyles.footnote2.copy(fontSize = 10.sp, lineHeight = 12.sp),
+                fontWeight = FontWeight.SemiBold,
+                color = MiuixTheme.colorScheme.onPrimary,
+                maxLines = 1,
+            )
+        }
     }
 }
 

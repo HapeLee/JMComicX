@@ -28,6 +28,7 @@ internal data class JmxRoute private constructor(
     internal enum class Destination(val title: String) {
         MAIN(""),
         FAVORITES("漫画收藏"),
+        UPDATES("更新列表"),
         HISTORY("观看历史"),
         DOWNLOADS("离线下载"),
         DAILY("每日签到"),
@@ -40,6 +41,7 @@ internal data class JmxRoute private constructor(
     companion object {
         val MAIN = JmxRoute(Destination.MAIN)
         val FAVORITES = JmxRoute(Destination.FAVORITES)
+        val UPDATES = JmxRoute(Destination.UPDATES)
         val HISTORY = JmxRoute(Destination.HISTORY)
         val DOWNLOADS = JmxRoute(Destination.DOWNLOADS)
         val DAILY = JmxRoute(Destination.DAILY)

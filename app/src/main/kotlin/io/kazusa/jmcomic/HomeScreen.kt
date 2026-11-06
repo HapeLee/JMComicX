@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -223,7 +222,7 @@ private fun HomeAlbumGrid(
     }
 
     LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
+        columns = AlbumGridCells,
         state = gridState,
         modifier = Modifier
             .fillMaxSize()

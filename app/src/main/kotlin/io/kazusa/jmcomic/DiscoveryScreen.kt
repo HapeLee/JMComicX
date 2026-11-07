@@ -212,8 +212,8 @@ internal fun DiscoveryScreen(
                         modifier = Modifier.fillMaxSize()
                             .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
                         contentPadding = PaddingValues(
-                            start = 12.dp,
-                            end = 12.dp,
+                            start = DISCOVERY_HORIZONTAL_PADDING,
+                            end = DISCOVERY_HORIZONTAL_PADDING,
                             top = padding.calculateTopPadding() + 12.dp,
                             bottom = padding.calculateBottomPadding() + 24.dp,
                         ),
@@ -328,6 +328,9 @@ internal fun DiscoveryScreen(
 /**
  * 顶栏标签行：直接用 Miuix 的 TabRowWithContour，底边多留一段空白，
  * 让渐进模糊/遮罩在标签下方完成衰减，标签自身仍处在有模糊、有遮罩的区间内。
+ *
+ * 底色置空：标签行压在顶栏模糊层上，控件自带的底色会在模糊层上切出一条灰带。
+ * 左右内缩与网格内容共用 [DISCOVERY_HORIZONTAL_PADDING]，保证标签和卡片左边缘对齐。
  */
 @Composable
 private fun DiscoveryTabRow(
@@ -340,7 +343,11 @@ private fun DiscoveryTabRow(
         tabs = tabs,
         selectedTabIndex = selectedIndex.coerceIn(0, tabs.lastIndex),
         onTabSelected = onTabSelected,
-        modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp),
+        colors = TabRowDefaults.tabRowColors(backgroundColor = Color.Transparent),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = DISCOVERY_HORIZONTAL_PADDING)
+            .padding(bottom = 14.dp),
     )
 }
 
@@ -378,3 +385,6 @@ private fun DiscoveryMessage(title: String, message: String, modifier: Modifier 
         }
     }
 }
+
+/** 网格内容与顶栏标签行共用的左右边距：两者左边缘必须落在同一条竖线上。 */
+private val DISCOVERY_HORIZONTAL_PADDING = 12.dp

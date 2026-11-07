@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -112,6 +113,7 @@ internal fun JmxApp(
     val uriHandler = LocalUriHandler.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val homeRepository = remember(applicationContext) { HomeRepository(applicationContext) }
+    val discoveryRepository = remember(homeRepository) { DiscoveryRepository(homeRepository) }
     val updateManager = remember(applicationContext) { AppUpdateManager(applicationContext) }
     val updateState by updateManager.state.collectAsState()
     val accountRepository = remember(homeRepository, applicationContext) {
@@ -441,6 +443,8 @@ internal fun JmxApp(
                                     1 -> bookshelfCategoryMenu.available
                                     else -> false
                                 }
+                                // 左下角发现入口与右侧分类按钮同一口径：首页数据就绪后才出现。
+                                val discoveryButtonVisible = categoryButtonVisible && categoryTab == 0
                                 val categoryMotion = rememberMatterBarMotion(categoryButtonVisible, tabs.size)
                                 var navigationHeightPx by remember { mutableIntStateOf(0) }
                                 val categoryMenuBottomPadding = if (categoryMenuBesideNavigation) null else {
@@ -783,6 +787,19 @@ internal fun JmxApp(
                                 }
                                 // 同 Matter：按钮默认在底栏下方，菜单展开时再整体提到上层。
                                 Box(Modifier.fillMaxSize()) {
+                                    // 发现入口贴左下角，与右侧分类按钮同在一条底栏线上。
+                                    FloatingDiscoveryMenu(
+                                        onWeekly = { navigateAccount(JmxRoute.WEEKLY) },
+                                        onRanking = { navigateAccount(JmxRoute.RANKING) },
+                                        backdrop = navigationBackdrop,
+                                        modifier = Modifier
+                                            .align(Alignment.BottomStart)
+                                            .padding(
+                                                start = 16.dp,
+                                                bottom = categoryMenuBottomPadding ?: categoryMotion.bottomPadding,
+                                            ),
+                                        visible = discoveryButtonVisible,
+                                    )
                                     FloatingCategoryMenu(
                                         items = if (categoryTab == 1) bookshelfCategoryMenu.items else homeCategories.map { it.title },
                                         selectedIndex = if (categoryTab == 1) bookshelfCategoryMenu.selectedIndex else homeCategories
@@ -872,6 +889,27 @@ internal fun JmxApp(
                                 onRetryDownloads = { ids -> downloadOperation { offlineManager.resume(ids) } },
                                 topBarBlurStyle = topBarBlurStyle,
                                 liftedAlbumId = detailRequest?.takeIf { it.origin == AlbumDetailOrigin.DOWNLOADS && it.sourceBounds != null }?.album?.id,
+                            )
+                            JmxRoute.WEEKLY,
+                            JmxRoute.RANKING,
+                            -> DiscoveryScreen(
+                                kind = if (route == JmxRoute.WEEKLY) DiscoveryKind.WEEKLY else DiscoveryKind.RANKING,
+                                repository = discoveryRepository,
+                                onBack = ::navigateAccountBack,
+                                onAlbumSelected = { album, bounds ->
+                                    if (detailRequest == null) {
+                                        detailRequest = AlbumDetailTransitionRequest(
+                                            album = album,
+                                            sourceBounds = bounds,
+                                            origin = AlbumDetailOrigin.DISCOVERY,
+                                        )
+                                    }
+                                },
+                                liftedAlbumId = detailRequest
+                                    ?.takeIf { it.origin == AlbumDetailOrigin.DISCOVERY && it.sourceBounds != null }
+                                    ?.album
+                                    ?.id,
+                                topBarBlurStyle = topBarBlurStyle,
                             )
                             JmxRoute.ABOUT -> AboutScreen(
                                 innerPadding = PaddingValues(),
@@ -1058,6 +1096,8 @@ internal fun JmxApp(
                                             onClearComicUpdates = albumUpdateCenter::clearAllPending,
                                         )
                                         JmxRoute.MAIN,
+                                        JmxRoute.WEEKLY,
+                                        JmxRoute.RANKING,
                                         JmxRoute.ABOUT,
                                         JmxRoute.GROUP_ORDER,
                                         JmxRoute.UPDATES,

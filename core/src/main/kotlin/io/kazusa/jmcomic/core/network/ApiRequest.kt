@@ -8,7 +8,9 @@ data class ApiRequest(
     val form: Map<String, String?> = emptyMap(),
     val headers: Map<String, String> = emptyMap(),
     val requireSuccessCode: Boolean = true,
-    val excludedEndpointUrl: String? = null
+    val excludedEndpointUrl: String? = null,
+    /** 跳过响应缓存的新鲜/过期读，直接出网；不影响线上参数。 */
+    val forceRefresh: Boolean = false
 )
 
 class ApiRequestBuilder(private val route: ApiRoute) {
@@ -17,6 +19,9 @@ class ApiRequestBuilder(private val route: ApiRoute) {
     private val headers = linkedMapOf<String, String>()
     private var requireSuccessCode: Boolean = true
     private var excludedEndpointUrl: String? = null
+    private var forceRefresh: Boolean = false
+
+    fun forceRefresh(enabled: Boolean = true): ApiRequestBuilder = apply { forceRefresh = enabled }
 
     fun query(name: String, value: String?): ApiRequestBuilder = apply {
         putOrRemove(query, name, value)
@@ -57,7 +62,8 @@ class ApiRequestBuilder(private val route: ApiRoute) {
             form = form.toMap(),
             headers = headers.toMap(),
             requireSuccessCode = requireSuccessCode,
-            excludedEndpointUrl = excludedEndpointUrl
+            excludedEndpointUrl = excludedEndpointUrl,
+            forceRefresh = forceRefresh
         )
     }
 

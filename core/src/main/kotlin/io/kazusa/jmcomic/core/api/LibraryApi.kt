@@ -106,27 +106,45 @@ class LibraryApi(
         }
     }
 
-    suspend fun week(): JmxResult<WeekInfo> {
-        val data = when (val result = apiClient.requestJson(apiRequest(ApiRoute.Week))) {
+    suspend fun week(forceRefresh: Boolean = false): JmxResult<WeekInfo> {
+        val data = when (
+            val result = apiClient.requestJson(apiRequest(ApiRoute.Week) { this.forceRefresh(forceRefresh) })
+        ) {
             is JmxResult.Success -> result.value
             is JmxResult.Failure -> return result
         }
         val root = data.asObjectOrNull()
             ?: return JmxResult.Failure(JmxError.Schema("/week data is not an object"))
-        return JmxResult.Success(root.toWeekInfo())
+        return root.discoveryWeekInfo()
     }
 
-    suspend fun weekFilter(page: Int, categoryId: String, typeId: String): JmxResult<AlbumPage> {
-        return albumPage(ApiRoute.WeekFilter) {
+    suspend fun weekFilter(
+        page: Int,
+        categoryId: String,
+        typeId: String,
+        forceRefresh: Boolean = false,
+        strictList: Boolean = false
+    ): JmxResult<AlbumPage> {
+        if (categoryId.isBlank() || typeId.isBlank()) {
+            return JmxResult.Failure(JmxError.Schema("每周必看缺少筛选项", field = "id/type"))
+        }
+        return albumPage(ApiRoute.WeekFilter, forceRefresh = forceRefresh, strictList = strictList) {
             queryAtLeast("page", page, minimum = 1)
             query("id", categoryId)
             query("type", typeId)
         }
     }
 
-    suspend fun categoriesFilter(filter: CategoryFilter): JmxResult<AlbumPage> {
-
-        return albumPage(ApiRoute.CategoriesFilter) {
+    /**
+     * 分类/榜单分页。首页分类与发现页共用同一路由，但两者的容错策略不同：
+     * 首页沿用宽松映射（跳过畸形条目），发现页传 [strictList] 要求列表结构明确。
+     */
+    suspend fun categoriesFilter(
+        filter: CategoryFilter,
+        forceRefresh: Boolean = false,
+        strictList: Boolean = false
+    ): JmxResult<AlbumPage> {
+        return albumPage(ApiRoute.CategoriesFilter, forceRefresh = forceRefresh, strictList = strictList) {
             queryAtLeast("page", filter.page, minimum = 1)
             query("order", "")
             query("c", filter.category)
@@ -280,12 +298,16 @@ class LibraryApi(
 
     private suspend fun albumPage(
         route: ApiRoute,
+        forceRefresh: Boolean = false,
+        strictList: Boolean = false,
         build: ApiRequestBuilder.() -> Unit
     ): JmxResult<AlbumPage> {
-        val data = when (val result = apiClient.requestJson(apiRequest(route, build))) {
+        val data = when (val result = apiClient.requestJson(apiRequest(route, build).copy(forceRefresh = forceRefresh))) {
             is JmxResult.Success -> result.value
             is JmxResult.Failure -> return result
         }
+        // 发现页要求条目结构明确：缺失或错形的列表不能当成"空列表"。
+        if (strictList) return data.discoveryPage()
         return data.toAlbumPageOrNull()
             ?.let { JmxResult.Success(it) }
             ?: JmxResult.Failure(JmxError.Schema("${route.path} data is not object or array"))

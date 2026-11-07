@@ -98,7 +98,10 @@ fun LiquidGlassMorphMenu(
     emptyLabel: String = "",
     maxPanelHeight: Dp = MORPH_PANEL_MAX_HEIGHT,
     enabled: Boolean = true,
+    /** true 时按钮贴左下角、面板向右展开；false 保持 Matter 的右下角锚点。 */
+    alignStart: Boolean = false,
 ) {
+    val anchor = if (alignStart) Alignment.BottomStart else Alignment.BottomEnd
     val isBlurSupported = remember { isRuntimeShaderSupported() }
     val glassBackdrop = rememberMatterBackdrop(backdrop)
     val blurActive = isBlurSupported && glassBackdrop != null
@@ -122,7 +125,7 @@ fun LiquidGlassMorphMenu(
         // 玻璃按当前形变尺寸测量，右下角始终停在盒子里的固定锚点上。
         Box(
             modifier = Modifier.morphContainerSize(
-                progress, MORPH_PANEL_WIDTH, panelHeight, MORPH_PANEL_LIFT, collapsedSize
+                progress, MORPH_PANEL_WIDTH, panelHeight, MORPH_PANEL_LIFT, collapsedSize, alignStart
             )
         ) {
             // 玻璃：铺满当前容器（不裁切，保住外扩的阴影）
@@ -195,7 +198,7 @@ fun LiquidGlassMorphMenu(
                 // 折叠态的按钮图标：停在右下角那颗「按钮」里，随形变提前淡出
                 Box(
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
+                        .align(anchor)
                         .size(collapsedSize)
                         .graphicsLayer { alpha = (1f - progress.value * 1.8f).coerceIn(0f, 1f) }
                         .then(
@@ -224,7 +227,7 @@ fun LiquidGlassMorphMenu(
                 if (expanded || progress.value > 0.001f) {
                     Column(
                         modifier = Modifier
-                            .align(Alignment.BottomEnd)
+                            .align(anchor)
                             .requiredSize(MORPH_PANEL_WIDTH, panelHeight)
                             .verticalScroll(rememberScrollState())
                             .padding(vertical = MORPH_PANEL_PADDING)
@@ -266,7 +269,7 @@ fun LiquidGlassMorphMenu(
                 enabled = expanded && enabled,
                 // 关闭入口停在根盒子的右下角 = 按钮原来的位置
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
+                    .align(anchor)
                     .graphicsLayer { alpha = progress.value.coerceIn(0f, 1f) }
             ) {
                 LiquidGlassIcon(
@@ -291,7 +294,8 @@ private fun Modifier.morphContainerSize(
     panelWidth: Dp,
     panelHeight: Dp,
     lift: Dp,
-    collapsedSize: Dp
+    collapsedSize: Dp,
+    alignStart: Boolean
 ): Modifier = this.layout { measurable, _ ->
     val collapsed = collapsedSize.roundToPx()
     val containerWidth = panelWidth.roundToPx()
@@ -304,7 +308,8 @@ private fun Modifier.morphContainerSize(
     val liftPx = (lift.toPx() * morphPositionEase(p)).roundToInt()
     val placeable = measurable.measure(Constraints.fixed(w, h))
     layout(containerWidth, containerHeight) {
-        placeable.place(containerWidth - w, containerHeight - liftPx - h)
+        // 左锚点时玻璃贴左边生长，右锚点保持 Matter 的右下角锚点。
+        placeable.place(if (alignStart) 0 else containerWidth - w, containerHeight - liftPx - h)
     }
 }
 

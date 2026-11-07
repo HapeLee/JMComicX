@@ -1,0 +1,41 @@
+package io.kazusa.jmcomic
+
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+/** 次级/轻量动作不是填充式提交按钮：保留 Miuix 原生反馈与语义。 */
+@Composable
+internal fun QuietTextAction(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    emphasized: Boolean = false,
+    destructive: Boolean = false,
+) {
+    val contentColor = when {
+        destructive -> MiuixTheme.colorScheme.error
+        emphasized -> MiuixTheme.colorScheme.primary
+        else -> MiuixTheme.colorScheme.onSurfaceVariantSummary
+    }
+    TextButton(
+        text = text,
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        minHeight = 44.dp,
+        insideMargin = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+        colors = ButtonDefaults.textButtonColors(
+            color = Color.Transparent,
+            disabledColor = Color.Transparent,
+            textColor = contentColor,
+            disabledTextColor = MiuixTheme.colorScheme.disabledOnSecondaryVariant,
+        ),
+    )
+}

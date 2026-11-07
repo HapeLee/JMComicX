@@ -43,6 +43,8 @@ internal fun FloatingCategoryMenu(
     visible: Boolean = true,
     motion: MatterBarMotion? = null,
     closeKey: Any? = null,
+    /** 折叠态图标；默认排序图标（分类/分组语义），期刊入口可换成别的。 */
+    iconOverride: (@Composable () -> Unit)? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var entered by remember { mutableStateOf(false) }
@@ -111,10 +113,14 @@ internal fun FloatingCategoryMenu(
                     translationY = frame.offsetY.dp.toPx()
                 },
             icon = {
-                LiquidGlassIcon(
-                    imageVector = MiuixIcons.Sort,
-                    contentDescription = "$description：${items.getOrNull(selectedIndex).orEmpty()}",
-                )
+                if (iconOverride != null) {
+                    iconOverride()
+                } else {
+                    LiquidGlassIcon(
+                        imageVector = MiuixIcons.Sort,
+                        contentDescription = "$description：${items.getOrNull(selectedIndex).orEmpty()}",
+                    )
+                }
             },
         )
     }

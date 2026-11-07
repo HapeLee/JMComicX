@@ -69,7 +69,8 @@ class JmxApiClient(
         if (cache == null || rule == null) return requestJsonDeduplicated(request)
 
         val key = cacheKey(request)
-        val cached = readCache(cache, key)
+        // forceRefresh 要求真实出网：跳过新鲜/过期读，但写回仍走同一个键。
+        val cached = if (request.forceRefresh) null else readCache(cache, key)
         if (cached != null) {
             val (age, parsed) = cached
             if (age < rule.freshMillis) {

@@ -530,9 +530,9 @@ private fun ComicReaderContent(
             return
         }
         val address = ReaderPageAddress(selectedChapter.id, currentPageIndex)
-        val current = readerWindowPageIndex(latestItems, address)
-        if (current < 0) return
-        val target = current + direction
+        // 章间分割块不是正文页，按键翻页要跨过它，否则一次按键只会滚进一条分割线。
+        val target = readerWindowAdjacentPageIndex(latestItems, address, direction)
+        if (target < 0) return
         coroutineScope.launch { moveToItem(target) }
     }
     // 使用普通 lambda 更新回调，避免局部函数引用的相等性保留首次加载的窗口。
@@ -708,8 +708,10 @@ private fun ComicReaderContent(
                                 onRetry = { failedPages.remove(item.key); pageRetryKeys[item.key] = (pageRetryKeys[item.key] ?: 0) + 1 },
                             )
                         }
-                        val boundaryContent: @Composable (ReaderWindowItem) -> Unit = { item ->
-                            ReaderChapterBoundary(
+                        val boundaryContent: @Composable (ReaderWindowItem, Boolean) -> Unit = { item, paged ->
+                            if (item is ReaderWindowItem.Separator) {
+                                ReaderChapterSeparator(item = item, chapters = chapters, paged = paged)
+                            } else ReaderChapterBoundary(
                                 item = item, chapters = chapters,
                                 onRetry = { if (item is ReaderWindowItem.Boundary) ensureChapter(item.chapterIndex, force = true) },
                                 onSkip = if (offline != null && item is ReaderWindowItem.Boundary) {
@@ -725,12 +727,12 @@ private fun ComicReaderContent(
                             onFlipForward = { nextChapterIndex?.let { selectChapter(it) } },
                             onFlipBackward = { previousChapterIndex?.let { selectChapter(it, ReaderChapterLanding.LAST) } },
                             onToggleControls = { controlsVisible = !controlsVisible },
-                            pageContent = { pageContent(it, false) }, boundaryContent = boundaryContent,
+                            pageContent = { pageContent(it, false) }, boundaryContent = { boundaryContent(it, false) },
                         ) else ReaderPagedPages(
                             itemState = renderedSpreads, mode = settings.mode, pagerState = pagerState,
                             onZoomChanged = { spreadZoomed = it },
                             onToggleControls = { controlsVisible = !controlsVisible },
-                            pageContent = { pageContent(it, true) }, boundaryContent = boundaryContent,
+                            pageContent = { pageContent(it, true) }, boundaryContent = { boundaryContent(it, true) },
                         )
                     }
                 }
@@ -1071,7 +1073,13 @@ private fun ReaderPages(
             itemsIndexed(
                 items = items,
                 key = { _, item -> item.key },
-                contentType = { _, item -> if (item is ReaderWindowItem.Page) "reader-page" else "reader-boundary" },
+                contentType = { _, item ->
+                    when (item) {
+                        is ReaderWindowItem.Page -> "reader-page"
+                        is ReaderWindowItem.Separator -> "reader-separator"
+                        else -> "reader-boundary"
+                    }
+                },
             ) { _, item ->
                 if (item is ReaderWindowItem.Page) pageContent(item) else boundaryContent(item)
             }
@@ -1258,6 +1266,79 @@ private fun ReaderZoomablePage(
             scaleX = scale; scaleY = scale
             translationX = offset.x; translationY = offset.y
         }) { content() }
+    }
+}
+
+/**
+ * 连续章节之间的分割块：四行「上一章：/ 章名 / 下一章：/ 章名」，整体居左。
+ *
+ * 章名比标签大一号，标签只是提示这是哪一侧的衔接。条漫里上下各一条细线夹住整块，
+ * 滚动时一眼就能看出跨了话；翻页模式下它独占一页（章扉），所以去掉细线只留文字。
+ */
+@Composable
+private fun ReaderChapterSeparator(
+    item: ReaderWindowItem.Separator,
+    chapters: List<AlbumChapter>,
+    paged: Boolean,
+) {
+    val previousTitle = chapters.getOrNull(item.previousChapterIndex)?.displayName(item.previousChapterIndex)
+    val nextTitle = chapters.getOrNull(item.chapterIndex)?.displayName(item.chapterIndex)
+    if (previousTitle == null && nextTitle == null) return
+    val dividerColor = MiuixTheme.colorScheme.dividerLine.copy(alpha = 0.6f)
+    val labelStyle = if (paged) MiuixTheme.textStyles.footnote1 else MiuixTheme.textStyles.footnote2
+    val nameStyle = if (paged) MiuixTheme.textStyles.title2 else MiuixTheme.textStyles.title4
+    val groupSpacing = if (paged) 20.dp else 14.dp
+    val lineSpacing = if (paged) 6.dp else 4.dp
+
+    @Composable
+    fun chapterGroup(label: String, title: String?) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.spacedBy(lineSpacing),
+        ) {
+            Text(
+                text = label,
+                style = labelStyle,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                maxLines = 1,
+            )
+            Text(
+                text = title.orEmpty(),
+                style = nameStyle,
+                color = MiuixTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Start,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+
+    val content: @Composable ColumnScope.() -> Unit = {
+        chapterGroup("上一章：", previousTitle)
+        Spacer(Modifier.height(groupSpacing))
+        chapterGroup("下一章：", nextTitle)
+    }
+
+    if (paged) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 40.dp),
+            horizontalAlignment = Alignment.Start,
+            content = content,
+        )
+    } else {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp),
+            horizontalAlignment = Alignment.Start,
+        ) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(dividerColor))
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp),
+                horizontalAlignment = Alignment.Start,
+                content = content,
+            )
+            Box(Modifier.fillMaxWidth().height(1.dp).background(dividerColor))
+        }
     }
 }
 

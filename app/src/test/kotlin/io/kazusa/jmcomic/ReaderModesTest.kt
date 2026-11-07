@@ -17,6 +17,9 @@ class ReaderModesTest {
         },
     )
 
+    private fun List<ReaderWindowItem>.indexOfSeparator(chapterId: String): Int =
+        indexOfFirst { it is ReaderWindowItem.Separator && it.chapterId == chapterId }
+
     @Test
     fun oldAndUnknownModePreferencesKeepWebtoon() {
         assertEquals(ReaderMode.WEBTOON, ReaderMode.fromPreference(null))
@@ -76,7 +79,8 @@ class ReaderModesTest {
         assertEquals(old.key, new.key)
         assertEquals(address, new.address)
         assertEquals(1, new.page.index)
-        assertEquals(401, readerWindowPageIndex(after, address))
+        // 前插的一话贡献 400 页 + 一条章间分割块，再算上本话内第 1 页的偏移。
+        assertEquals(402, readerWindowPageIndex(after, address))
     }
 
     @Test
@@ -86,7 +90,8 @@ class ReaderModesTest {
         val after = readerWindowItems(chapters, 3, states, true)
         val address = ReaderPageAddress("chapter-3", 0)
         assertEquals(before[readerWindowPageIndex(before, address)].key, after[readerWindowPageIndex(after, address)].key)
-        assertEquals(400, readerWindowPageIndex(after, address))
+        // 窗口左移后只剩 chapter-2 的 400 页，外加 chapter-3 前的分割块。
+        assertEquals(401, readerWindowPageIndex(after, address))
         assertFalse(after.filterIsInstance<ReaderWindowItem.Page>().any { it.address.chapterId == "chapter-1" })
     }
 
@@ -118,5 +123,49 @@ class ReaderModesTest {
         assertEquals(ReaderWindowItem.End, loaded.last())
         assertFalse(readerWindowItems(chapters, 5, mapOf(5 to content()), false).contains(ReaderWindowItem.End))
         assertTrue(readerWindowItems(emptyList(), 0, emptyMap(), true).isEmpty())
+    }
+
+    @Test
+    fun seamlessSplicingPutsOneSeparatorInFrontOfEveryJoinedChapter() {
+        val items = readerWindowItems(chapters, 2, (1..3).associateWith { content(2) }, true)
+        // 窗口 1..3：只在 chapter-2、chapter-3 之前各插一块，窗口首话之前不加。
+        assertEquals(
+            listOf("chapter-2", "chapter-3"),
+            items.filterIsInstance<ReaderWindowItem.Separator>().map { it.chapterId },
+        )
+        val first = items.first() as ReaderWindowItem.Page
+        assertEquals(ReaderPageAddress("chapter-1", 0), first.address)
+        assertEquals(2, items.indexOfSeparator("chapter-2"))
+        assertEquals(5, items.indexOfSeparator("chapter-3"))
+        // 分割块要同时标出上下一话，界面才能写出「上一章：… / 下一章：…」。
+        val separator = items.filterIsInstance<ReaderWindowItem.Separator>().last()
+        assertEquals("chapter-3", separator.chapterId)
+        assertEquals("chapter-2", separator.previousChapterId)
+        assertEquals(2, separator.previousChapterIndex)
+    }
+
+    @Test
+    fun singleChapterReadingNeverGetsASeparator() {
+        val items = readerWindowItems(chapters, 2, (0..5).associateWith { content() }, false)
+        assertTrue(items.none { it is ReaderWindowItem.Separator })
+    }
+
+    @Test
+    fun boundaryBlocksDoNotGetAnExtraSeparator() {
+        val error = ReaderChapterState.Error("missing")
+        val items = readerWindowItems(chapters, 1, mapOf(0 to content(), 1 to error, 2 to content()), true)
+        // 出错/加载中的边界块本身就是断点，再叠一条分割线只会连着两道横线。
+        assertTrue(items.none { it is ReaderWindowItem.Separator })
+    }
+
+    @Test
+    fun keyboardPagingSkipsTheSeparator() {
+        val items = readerWindowItems(chapters, 2, (1..3).associateWith { content(2) }, true)
+        val separator = items.indexOfSeparator("chapter-2")
+        val next = readerWindowAdjacentPageIndex(items, ReaderPageAddress("chapter-1", 1), 1)
+        assertEquals(separator + 1, next)
+        assertEquals(ReaderPageAddress("chapter-2", 0), (items[next] as ReaderWindowItem.Page).address)
+        assertEquals(separator - 1, readerWindowAdjacentPageIndex(items, ReaderPageAddress("chapter-2", 0), -1))
+        assertEquals(-1, readerWindowAdjacentPageIndex(items, ReaderPageAddress("chapter-1", 0), -1))
     }
 }

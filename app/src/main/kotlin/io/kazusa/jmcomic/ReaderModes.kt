@@ -22,6 +22,21 @@ internal sealed interface ReaderWindowItem {
         override val key: String = "page:${address.chapterId}:${address.pageIndex}:${page.cacheKey}"
     }
 
+    /**
+     * 连续章节拼接处的分割块：同时标出上一话与下一话，滚动/翻页时能立刻确认自己跨到了哪。
+     *
+     * 只有两段正文页直接相接时才出现：`Boundary`（缺章、加载中、出错）本身就是断点，
+     * 再插一条分割块只会连着两道横线。
+     */
+    data class Separator(
+        val chapterIndex: Int,
+        val chapterId: String,
+        val previousChapterIndex: Int,
+        val previousChapterId: String,
+    ) : ReaderWindowItem {
+        override val key: String = "separator:$chapterId"
+    }
+
     data class Boundary(val chapterIndex: Int, val chapterId: String, val state: ReaderChapterState) : ReaderWindowItem {
         override val key: String = "boundary:$chapterId"
     }
@@ -44,8 +59,17 @@ internal fun readerWindowItems(
     for (index in readerWindowIndices(center, chapters.size, seamless)) {
         val chapter = chapters[index]
         when (val state = states[index] ?: ReaderChapterState.Loading) {
-            is ReaderChapterState.Content -> state.pages.forEach { page ->
-                add(ReaderWindowItem.Page(index, ReaderPageAddress(chapter.id, page.index), page))
+            is ReaderChapterState.Content -> {
+                if (state.pages.isEmpty()) continue
+                // 上一项是正文页才说明这次是真的把两话接在一起；否则上一项是不显示内容的边界块，
+                // 那条边界自己就是分隔。
+                val previous = lastOrNull() as? ReaderWindowItem.Page
+                if (previous != null) {
+                    add(ReaderWindowItem.Separator(index, chapter.id, previous.chapterIndex, previous.address.chapterId))
+                }
+                state.pages.forEach { page ->
+                    add(ReaderWindowItem.Page(index, ReaderPageAddress(chapter.id, page.index), page))
+                }
             }
             else -> add(ReaderWindowItem.Boundary(index, chapter.id, state))
         }
@@ -57,6 +81,29 @@ internal fun readerWindowItems(
 
 internal fun readerWindowPageIndex(items: List<ReaderWindowItem>, address: ReaderPageAddress): Int =
     items.indexOfFirst { it is ReaderWindowItem.Page && it.address == address }
+
+/**
+ * 按键翻页时落到的下一页下标。
+ *
+ * 分割块不是正文页：音量键/翻页按钮必须跨过它直接进下一话的第一页，否则一次按键
+ * 只把一条分割线滚进视野，看着像卡住了。没有下一页时返回 -1。
+ */
+internal fun readerWindowAdjacentPageIndex(
+    items: List<ReaderWindowItem>,
+    address: ReaderPageAddress,
+    direction: Int,
+): Int {
+    if (direction == 0) return -1
+    val current = readerWindowPageIndex(items, address)
+    if (current < 0) return -1
+    val step = if (direction > 0) 1 else -1
+    var index = current + step
+    while (index in items.indices) {
+        if (items[index] is ReaderWindowItem.Page) return index
+        index += step
+    }
+    return -1
+}
 
 /** 物理阅读方向不随系统语言改变，反向布局只作用于阅读内容。 */
 internal fun readerPagerReverseLayout(mode: ReaderMode, systemRtl: Boolean): Boolean =

@@ -59,6 +59,14 @@ class ReaderSpreadsTest {
         assertEquals(boundary, spreads[4].items.single())
         assertEquals(2, build(items = listOf(pages[1], pages[3])).size)
     }
+    @Test fun chapterSeparatorOwnsItsSpreadAndNeverPairs() {
+        val separator = ReaderWindowItem.Separator(1, "ch-1", 0, "ch-0")
+        val items = pages(count = 2) + separator + pages(chapter = 1, count = 2)
+        val spreads = build(items = items, double = ReaderDoublePageMode.ALWAYS, cover = false)
+        assertEquals(listOf(2, 0, 2), spreads.map { it.pages.size })
+        assertEquals(separator, spreads[1].items.single())
+    }
+
     @Test fun physicalOrderChangesWithoutChangingLogicalIdentity() {
         val ltr = build()
         val rtl = build(mode = ReaderMode.RIGHT_TO_LEFT)

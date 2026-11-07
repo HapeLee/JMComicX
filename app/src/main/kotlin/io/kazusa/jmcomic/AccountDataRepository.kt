@@ -310,8 +310,11 @@ internal class AccountDataRepository(
     /**
      * 手动签到：先读当日状态，已签到就不再提交；提交后一律重新读回确认。
      * 提交响应为空载荷或网络异常时也不重放，只以回读结果为准。
+     *
+     * [knownInfo] 由"刚读过当日状态"的调用方传入（自动签到），省掉一次 `/daily`；
+     * 手动签到不传——页面上的那份状态可能已经放了很久，提交前必须重新确认。
      */
-    suspend fun checkIn(profile: AccountProfile): JmxResult<ActionResult> {
+    suspend fun checkIn(profile: AccountProfile, knownInfo: DailyCheckInfo? = null): JmxResult<ActionResult> {
         val id = profile.id?.toString()
             ?: return JmxResult.Failure(JmxError.Schema("用户资料缺少 UID", field = "uid"))
         return confirmedCheckIn(
@@ -321,6 +324,7 @@ internal class AccountDataRepository(
                     core.libraryApi.dailyCheck(id, eventId.toString())
                 }
             },
+            knownInfo = knownInfo,
         )
     }
 
@@ -341,8 +345,8 @@ internal class AccountDataRepository(
                 is JmxResult.Failure -> return AutoCheckInResult.FAILED
             }
             if (info.isSignedToday()) return AutoCheckInResult.ALREADY_SIGNED
-            // confirmedCheckIn 已经包含回读确认，Success 即代表服务端当日记录成立。
-            return when (checkIn(profile)) {
+            // 复用上面刚读到的 info：confirmedCheckIn 已经包含回读确认，Success 即代表当日记录成立。
+            return when (checkIn(profile, knownInfo = info)) {
                 is JmxResult.Success -> AutoCheckInResult.COMPLETED
                 is JmxResult.Failure -> AutoCheckInResult.FAILED
             }
@@ -408,44 +412,33 @@ private var lastAutoCheckInAttemptAtMillis = 0L
 
 private const val AUTO_CHECK_IN_MIN_INTERVAL_MILLIS = 15_000L
 
-internal fun resolveCheckInAfterEmptyPayload(
-    refreshedInfo: JmxResult<DailyCheckInfo?>
-): JmxResult<ActionResult> {
-    val info = when (refreshedInfo) {
-        is JmxResult.Failure -> return refreshedInfo
-        is JmxResult.Success -> refreshedInfo.value
-            ?: return JmxResult.Failure(JmxError.EmptyData("签到提交返回空数据，且服务端未返回活动信息"))
-    }
-    if (!info.isSignedToday()) {
-        return JmxResult.Failure(JmxError.EmptyData("签到提交返回空数据，且当日记录未确认"))
-    }
-    return JmxResult.Success(
-        ActionResult(
-            status = "ok",
-            message = "签到成功",
-            type = null,
-            raw = emptyMap()
-        )
-    )
-}
-
 internal fun DailyCheckInfo.isSignedToday(now: Date = Date()): Boolean {
     val todayValues = todayDateValues(now)
-    val todayDay = SimpleDateFormat("d", Locale.US).format(now).toInt()
     return records.any { record ->
         if (record.signed != true) return@any false
-        val date = record.date?.trim().orEmpty()
-        date in todayValues || date.substringAfterLast('-').toIntOrNull() == todayDay
+        record.date?.trim().orEmpty() in todayValues
     }
 }
-
-/** 签到判定的唯一入口在 [checkInAcceptance]；这里不再保留第二套宽松规则。 */
 
 internal fun todayDate(now: Date = Date()): String =
     SimpleDateFormat("yyyy-MM-dd", Locale.US).format(now)
 
+/**
+ * 服务端 `date` 字段可能下发的几种形态：完整日期（2026-11-08）、月-日（11-08 / 11-8）、纯日号（08 / 8）。
+ *
+ * 注意不能退化成"只比日号"：那样 10 月 8 日的记录在 11 月 8 日会被判成"今天已签到"，
+ * 跨月当天直接显示成已签到、真去签到时又报失败。
+ */
 internal fun todayDateValues(now: Date = Date()): Set<String> {
-    val fullDate = todayDate(now)
+    val month = SimpleDateFormat("MM", Locale.US).format(now)
     val day = SimpleDateFormat("dd", Locale.US).format(now)
-    return setOf(fullDate, day, day.toIntOrNull()?.toString().orEmpty())
+    val monthNumber = month.toIntOrNull()?.toString().orEmpty()
+    val dayNumber = day.toIntOrNull()?.toString().orEmpty()
+    return setOf(
+        todayDate(now),
+        "$month-$day",
+        "$monthNumber-$dayNumber",
+        day,
+        dayNumber,
+    ).filter(String::isNotEmpty).toSet()
 }

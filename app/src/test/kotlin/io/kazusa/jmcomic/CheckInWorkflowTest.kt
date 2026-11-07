@@ -28,7 +28,10 @@ class CheckInWorkflowTest {
         assertEquals(CheckInAcceptance.ALREADY_SIGNED, action("今天已經簽到過了").checkInAcceptance())
         assertEquals(CheckInAcceptance.REJECTED, action("账号异常").checkInAcceptance())
         assertEquals(CheckInAcceptance.REJECTED, action("签到未成功").checkInAcceptance())
-        assertEquals(CheckInAcceptance.REJECTED, action("").checkInAcceptance())
+        assertEquals(CheckInAcceptance.REJECTED, action("签到失败", status = "ok").checkInAcceptance())
+        // 白名单外的响应只算"看不出来"，不能直接判死：成功文案会随活动变体。
+        assertEquals(CheckInAcceptance.UNCONFIRMED, action("").checkInAcceptance())
+        assertEquals(CheckInAcceptance.UNCONFIRMED, action("签到成功，获得 10 Jcoin").checkInAcceptance())
     }
 
     @Test
@@ -97,5 +100,40 @@ class CheckInWorkflowTest {
         assertTrue(result is JmxResult.Failure)
         assertEquals(1, reads)
         assertEquals(1, writes)
+    }
+
+    /**
+     * 文案不在白名单里的成功响应，靠回读当日记录救回来——
+     * 直接判死会让"积分已到账却提示失败"成为常态。
+     */
+    @Test
+    fun unrecognisedSuccessCopyIsRescuedByTheDailyRecord() = runBlocking {
+        var reads = 0
+        var writes = 0
+        val result = confirmedCheckIn({ JmxResult.Success(info(++reads == 2)) }) {
+            writes++
+            JmxResult.Success(action("签到成功，获得 10 Jcoin"))
+        }
+        assertTrue(result is JmxResult.Success)
+        assertEquals(1, writes)
+        assertEquals(2, reads)
+    }
+
+    @Test
+    fun knownInfoSkipsTheExtraReadBeforeSubmitting() = runBlocking {
+        var reads = 0
+        var writes = 0
+        val result = confirmedCheckIn(
+            loadInfo = { JmxResult.Success(info(++reads == 1)) },
+            submit = {
+                writes++
+                JmxResult.Success(action("Jcoin:10 EXP:10"))
+            },
+            knownInfo = info(signed = false),
+        )
+        assertTrue(result is JmxResult.Success)
+        assertEquals(1, writes)
+        // 只有提交后那一次回读：调用方手里的当日状态就是刚读到的。
+        assertEquals(1, reads)
     }
 }

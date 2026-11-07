@@ -508,6 +508,8 @@ private sealed interface DailyUiState {
 private fun JmxError.toCheckInUiMessage(): String = when {
     requiresSessionRecovery() -> "登录状态已失效，请重新登录"
     this is JmxError.EmptyData -> message.ifBlank { "服务端暂时没有返回数据" }
+    // 签到被拒时 message 就是服务端原话，"接口返回错误 400" 只会让人以为线路出问题。
+    this is JmxError.Api -> message
     else -> toUiMessage()
 }
 

@@ -2,12 +2,9 @@ package io.kazusa.jmcomic
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import io.kazusa.jmcomic.core.api.DailyCheckInfo
 import io.kazusa.jmcomic.core.api.DailyRecord
-import io.kazusa.jmcomic.core.result.JmxError
-import io.kazusa.jmcomic.core.result.JmxResult
 import java.util.Calendar
 
 class AccountLogicTest {
@@ -78,11 +75,14 @@ class AccountLogicTest {
         val dayOnly = fullDate.copy(records = listOf(DailyRecord("18", signed = true, bonus = false)))
         val monthAndDay = fullDate.copy(records = listOf(DailyRecord("07-18", signed = true, bonus = false)))
         val unsigned = fullDate.copy(records = listOf(DailyRecord("18", signed = false, bonus = false)))
+        val previousMonth = fullDate.copy(records = listOf(DailyRecord("06-18", signed = true, bonus = false)))
 
         assertEquals(true, fullDate.isSignedToday(now))
         assertEquals(true, dayOnly.isSignedToday(now))
         assertEquals(true, monthAndDay.isSignedToday(now))
         assertEquals(false, unsigned.isSignedToday(now))
+        // 上月同一天不算今天：只比日号会让跨月当天误显示"已签到"。
+        assertEquals(false, previousMonth.isSignedToday(now))
     }
 
     @Test
@@ -113,34 +113,4 @@ class AccountLogicTest {
         assertEquals(7, dailyRewardCycleProgress(14))
     }
 
-    @Test
-    fun emptyPayloadCheckInResolvesSuccessOnlyWhenTodayRecorded() {
-        val signedToday = DailyCheckInfo(
-            dailyId = 7,
-            eventName = null,
-            currentProgress = null,
-            records = listOf(DailyRecord(todayDate(), signed = true, bonus = false)),
-            raw = emptyMap(),
-        )
-        val notSignedToday = signedToday.copy(
-            records = listOf(DailyRecord(todayDate(), signed = false, bonus = false))
-        )
-
-        val resolved = resolveCheckInAfterEmptyPayload(JmxResult.Success(signedToday))
-        assertTrue(resolved is JmxResult.Success)
-        assertEquals("签到成功", (resolved as JmxResult.Success).value.message)
-
-        val notRecorded = resolveCheckInAfterEmptyPayload(JmxResult.Success(notSignedToday))
-        assertTrue(notRecorded is JmxResult.Failure)
-        assertTrue((notRecorded as JmxResult.Failure).error is JmxError.EmptyData)
-
-        val noEvent = resolveCheckInAfterEmptyPayload(JmxResult.Success(null))
-        assertTrue(noEvent is JmxResult.Failure)
-        assertTrue((noEvent as JmxResult.Failure).error is JmxError.EmptyData)
-
-        val failure: JmxResult<DailyCheckInfo?> = JmxResult.Failure(JmxError.Network("offline"))
-        val passed = resolveCheckInAfterEmptyPayload(failure)
-        assertTrue(passed is JmxResult.Failure)
-        assertTrue((passed as JmxResult.Failure).error is JmxError.Network)
-    }
 }

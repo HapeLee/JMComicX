@@ -1,18 +1,24 @@
 package io.kazusa.jmcomic
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -24,9 +30,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.kazusa.jmcomic.core.image.ImageUrl
@@ -46,6 +54,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.DropdownEntry
@@ -60,12 +69,14 @@ import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Notes
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Sort
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import io.kazusa.jmcomic.effect.liquid.GlassTopBarDropdownMenu as SortMenu
 import io.kazusa.jmcomic.effect.liquid.GlassTopBarIcon as Icon
 import io.kazusa.jmcomic.effect.liquid.GlassTopBarIconButton as IconButton
+import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
 
 @Composable
 internal fun AlbumUpdatesScreen(
@@ -182,13 +193,16 @@ internal fun AlbumUpdatesScreen(
                             },
                             actions = {
                                 GlassTopBarActions {
-                                    SortMenu(
-                                        onExpandedChange = { sortMenuExpanded = it },
-                                        entry = DropdownEntry(items = AlbumUpdateSort.entries.map { order ->
-                                            DropdownItem(text = order.label, selected = sort == order, onClick = { sort = order })
-                                        }),
-                                    ) {
-                                        Icon(MiuixIcons.Sort, "更新排序", tint = MiuixTheme.colorScheme.onBackground)
+                                    // 列表为空时排序没有意义，别在空页面上留一个点了没反应的入口。
+                                    if (updates.isNotEmpty()) {
+                                        SortMenu(
+                                            onExpandedChange = { sortMenuExpanded = it },
+                                            entry = DropdownEntry(items = AlbumUpdateSort.entries.map { order ->
+                                                DropdownItem(text = order.label, selected = sort == order, onClick = { sort = order })
+                                            }),
+                                        ) {
+                                            Icon(MiuixIcons.Sort, "更新排序", tint = MiuixTheme.colorScheme.onBackground)
+                                        }
                                     }
                                     IconButton(onClick = ::refresh, enabled = !refreshing && !scanning) {
                                         if (refreshing || scanning) CircularProgressIndicator(size = 22.dp, strokeWidth = 2.dp)
@@ -219,45 +233,54 @@ internal fun AlbumUpdatesScreen(
                         ),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        item(key = "summary") {
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("${updates.size} 部有更新 · ${sort.label}", style = MiuixTheme.textStyles.headline1)
-                                Text(
-                                    "仅显示未查看的新增章节，时间为本机发现时间。首次检查会建立基线。",
-                                    style = MiuixTheme.textStyles.footnote1,
-                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                )
-                                message?.let { Text(it, style = MiuixTheme.textStyles.footnote1) }
-                                if (loading) Text("正在加载书籍信息…", style = MiuixTheme.textStyles.footnote1)
-                                if (failedIds.isNotEmpty()) {
-                                    TextButton(text = "${failedIds.size} 部书籍信息加载失败，点击重试", onClick = { retry++ })
-                                }
-                                if (accountIdentity == null) {
-                                    TextButton(text = "登录后查看收藏更新", onClick = onRequireLogin)
-                                }
-                            }
-                        }
+                        // 空态不摆摘要：一行"0 部有更新"加三条说明，比"没有更新"本身更抢眼。
                         if (updates.isEmpty()) {
                             item(key = "empty") {
-                                Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(24.dp)) {
-                                    Text(if (scanning || refreshing) "正在检查更新…" else "暂无未查看的更新")
-                                    TextButton(text = "检查更新", onClick = ::refresh, enabled = !scanning && !refreshing)
+                                AlbumUpdatesEmptyState(
+                                    modifier = Modifier
+                                        .fillParentMaxWidth()
+                                        .fillParentMaxHeight(0.78f),
+                                    checking = scanning || refreshing,
+                                    hasTrackedAlbums = visibleRecords.isNotEmpty(),
+                                    message = message,
+                                    showLogin = accountIdentity == null,
+                                    onCheck = ::refresh,
+                                    onRequireLogin = onRequireLogin,
+                                )
+                            }
+                        } else {
+                            item(key = "summary") {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("${updates.size} 部有更新 · ${sort.label}", style = MiuixTheme.textStyles.headline1)
+                                    Text(
+                                        "仅显示未查看的新增章节，时间为本机发现时间。首次检查会建立基线。",
+                                        style = MiuixTheme.textStyles.footnote1,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    )
+                                    message?.let { Text(it, style = MiuixTheme.textStyles.footnote1) }
+                                    if (loading) Text("正在加载书籍信息…", style = MiuixTheme.textStyles.footnote1)
+                                    if (failedIds.isNotEmpty()) {
+                                        TextButton(text = "${failedIds.size} 部书籍信息加载失败，点击重试", onClick = { retry++ })
+                                    }
+                                    if (accountIdentity == null) {
+                                        TextButton(text = "登录后查看收藏更新", onClick = onRequireLogin)
+                                    }
                                 }
                             }
-                        }
-                        items(updates, key = AlbumUpdateRecord::albumId) { record ->
-                            val id = record.albumId
-                            val album = shelfAlbums[id] ?: albums[id] ?: HomeAlbum(
-                                id, "JM$id", "书籍信息待加载", ImageUrl.albumCover(imageHost, id), imageHost,
-                            )
-                            AlbumUpdateRow(
-                                album = album,
-                                record = record,
-                                inBookshelf = id in shelfAlbums,
-                                inFavorites = id in favoriteIds,
-                                lifted = id == liftedAlbumId,
-                                onSelected = onAlbumSelected,
-                            )
+                            items(updates, key = AlbumUpdateRecord::albumId) { record ->
+                                val id = record.albumId
+                                val album = shelfAlbums[id] ?: albums[id] ?: HomeAlbum(
+                                    id, "JM$id", "书籍信息待加载", ImageUrl.albumCover(imageHost, id), imageHost,
+                                )
+                                AlbumUpdateRow(
+                                    album = album,
+                                    record = record,
+                                    inBookshelf = id in shelfAlbums,
+                                    inFavorites = id in favoriteIds,
+                                    lifted = id == liftedAlbumId,
+                                    onSelected = onAlbumSelected,
+                                )
+                            }
                         }
                     }
                 }
@@ -275,8 +298,103 @@ internal fun AlbumUpdatesScreen(
                 },
                 backdrop = backdrop,
                 description = "更新来源",
-                visible = liftedAlbumId == null && !sortMenuExpanded,
+                // 空态下"全部 0 / 书架 0 / 收藏 0"只是噪音，收起这个悬浮入口。
+                visible = liftedAlbumId == null && !sortMenuExpanded && updates.isNotEmpty(),
                 closeKey = accountIdentity,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AlbumUpdatesEmptyState(
+    modifier: Modifier = Modifier,
+    checking: Boolean,
+    hasTrackedAlbums: Boolean,
+    message: String?,
+    showLogin: Boolean,
+    onCheck: () -> Unit,
+    onRequireLogin: () -> Unit,
+) {
+    val title: String
+    val detail: String
+    when {
+        checking -> {
+            title = "正在检查更新"
+            detail = "正在依次查看书架与收藏里的漫画，检查完会自动显示新增章节。"
+        }
+
+        hasTrackedAlbums -> {
+            title = "暂无未查看的更新"
+            detail = "书架和收藏里的漫画都没有新章节。有更新时会出现在这里。"
+        }
+
+        // 藏书为空时也别断言"还没检查过"——确实扫过、只是没有可比对的记录。
+        else -> {
+            title = "暂无更新"
+            detail = "还没有可对照的记录。第一次检查会记下每部漫画的最新话数作为基线，之后只显示新增章节。"
+        }
+    }
+    Column(
+        modifier = modifier.padding(horizontal = 28.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(64.dp)
+                .clip(CircleShape)
+                .background(MiuixTheme.colorScheme.surfaceContainerHigh),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (checking) {
+                CircularProgressIndicator(size = 26.dp, strokeWidth = 2.dp)
+            } else {
+                MiuixIcon(
+                    imageVector = MiuixIcons.Notes,
+                    contentDescription = null,
+                    tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(title, style = MiuixTheme.textStyles.title4, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = detail,
+            style = MiuixTheme.textStyles.footnote1,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            textAlign = TextAlign.Center,
+        )
+        // 刚检查完的空结果也要有回音，否则点了刷新像什么都没发生。
+        message?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = it,
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                textAlign = TextAlign.Center,
+            )
+        }
+        Spacer(Modifier.height(18.dp))
+        TextButton(
+            text = if (checking) "正在检查…" else "立即检查",
+            onClick = onCheck,
+            enabled = !checking,
+            colors = ButtonDefaults.textButtonColorsPrimary(),
+        )
+        if (showLogin) {
+            // 次级动作降级成一行文字链接：两个 TextButton 紧挨着会糊成一块，主次也分不出来。
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "登录后查看收藏更新",
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onRequireLogin)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
             )
         }
     }

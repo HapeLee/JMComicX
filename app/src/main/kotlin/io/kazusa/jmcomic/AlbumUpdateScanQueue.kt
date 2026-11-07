@@ -14,26 +14,34 @@ import kotlinx.coroutines.launch
  * 调用方取消（比如用户离开书架页）不会把已经排队的刷新一起丢掉；
  * 同时到达的多个请求合并成一轮，避免翻页/下拉刷新各打一遍 `/album`。
  *
- * [force] 随批次一起排队（按"有则强制"合并）：出队时还要再判一次新鲜度，
- * 因为一轮扫描可能要几十秒，排队期间"上一轮刚扫完"完全可能已经让请求过期。
+ * 新鲜度判定 [isStale] 也归这里管，而不是留在调用方：入队前和出队时都得判，且必须是同一条规则。
+ * 一轮是"每部漫画一次 `/album`"，可能几十秒，排队期间上一轮完全可能已经扫完——
+ * 只有入队前判、出队不判，就会因为一次前台切换或书架改动把同一批漫画再扫一遍。
+ *
+ * [force] 随批次排队（按"有则强制"合并）：强制请求永不被新鲜度挡掉。
+ * 被判为过期的批次不扫描，所有等待方拿到 null。
  */
 internal class AlbumUpdateScanQueue<T>(
     private val scope: CoroutineScope,
     private val scanningChanged: (Boolean) -> Unit,
-    private val runRound: suspend (includeFavorites: Boolean, force: Boolean) -> T,
+    private val isStale: () -> Boolean,
+    private val runRound: suspend (includeFavorites: Boolean) -> T,
 ) {
     private data class Pending<T>(
         var includeFavorites: Boolean,
         var force: Boolean,
-        val waiters: MutableList<CompletableDeferred<T>>,
+        val waiters: MutableList<CompletableDeferred<T?>>,
     )
 
     private val lock = Any()
     private var pending: Pending<T>? = null
     private var worker: Job? = null
 
-    suspend fun request(includeFavorites: Boolean, force: Boolean): T {
-        val reply = CompletableDeferred<T>()
+    /** 返回 null 表示这一批（含它合并进来的其它请求）最终没扫。 */
+    suspend fun request(includeFavorites: Boolean, force: Boolean): T? {
+        // 入队前先挡一层：明显不该扫就别唤醒 worker，让调用方白白挂到一轮扫描结束。
+        if (!force && !isStale()) return null
+        val reply = CompletableDeferred<T?>()
         var start: Job? = null
         synchronized(lock) {
             val queued = pending
@@ -81,8 +89,14 @@ internal class AlbumUpdateScanQueue<T>(
                     }
                 } ?: return
                 active = batch
+                // 出队重判：排队期间上一轮可能已经把新鲜度刷掉了。
+                if (!batch.force && !isStale()) {
+                    batch.waiters.forEach { it.complete(null) }
+                    active = null
+                    continue
+                }
                 try {
-                    val result = runRound(batch.includeFavorites, batch.force)
+                    val result = runRound(batch.includeFavorites)
                     batch.waiters.forEach { it.complete(result) }
                 } catch (cancelled: CancellationException) {
                     throw cancelled

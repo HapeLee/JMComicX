@@ -2,11 +2,12 @@ package io.kazusa.jmcomic
 
 import android.content.Context
 import io.kazusa.jmcomic.core.runtime.JmxCore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 /**
  * 是否显示设置页里的「漫画更新提示」测试区块（立即检查 / 模拟一次 / 清除全部）。
@@ -35,7 +36,9 @@ internal class AlbumUpdateCenter(
 ) {
     private val store = AlbumUpdateStore(context)
     private val scanner = AlbumUpdateScanner(core, store)
-    private val scanLock = Mutex()
+    // 扫描是 App 级单例：用独立作用域，调用方页面销毁不会把排队中的刷新一起取消。
+    private val scanScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scanQueue = AlbumUpdateScanQueue(scanScope, { _scanning.value = it }, ::runScanRound)
 
     private val _records = MutableStateFlow(store.records())
     val records: StateFlow<Map<String, AlbumUpdateRecord>> = _records.asStateFlow()
@@ -89,8 +92,11 @@ internal class AlbumUpdateCenter(
      */
     suspend fun scan(includeFavorites: Boolean, force: Boolean): AlbumUpdateScanResult? {
         if (!force && !isStale()) return null
-        if (!scanLock.tryLock()) return null
-        _scanning.value = true
+        // 已经在扫时不再丢弃请求：排到下一轮，多个并发请求合并成一轮。
+        return scanQueue.request(includeFavorites)
+    }
+
+    private suspend fun runScanRound(includeFavorites: Boolean): AlbumUpdateScanResult {
         try {
             val targets = LinkedHashSet<String>()
             var favoritesFailed = false
@@ -114,8 +120,6 @@ internal class AlbumUpdateCenter(
             if (keep.isNotEmpty()) store.retainOnly(keep)
             return scanner.scan(targets).copy(favoritesFailed = favoritesFailed)
         } finally {
-            _scanning.value = false
-            scanLock.unlock()
             publish()
         }
     }

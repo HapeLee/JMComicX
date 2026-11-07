@@ -185,9 +185,71 @@ class LibraryApi(
         return JmxResult.Success(root.toFavoritePage())
     }
 
+    /**
+     * 观看记录。要求列表结构明确：删除/清空后的"第一页为空"是完成证明，
+     * 缺失或错形的载荷不能被当成空列表。
+     */
     suspend fun watchList(page: Int): JmxResult<AlbumPage> {
-        return albumPage(ApiRoute.WatchList) {
-            queryAtLeast("page", page, minimum = 1)
+        val data = when (
+            val result = apiClient.requestJson(apiRequest(ApiRoute.WatchList) {
+                queryAtLeast("page", page, minimum = 1)
+            })
+        ) {
+            is JmxResult.Failure -> return result
+            is JmxResult.Success -> result.value
+        }
+        val root = data.asObjectOrNull()
+        val list = when {
+            data is JsonArray -> data
+            root != null -> listOf("content", "list", "data", "albums", "photos")
+                .firstNotNullOfOrNull { key -> (root[key] as? JsonArray) }
+            else -> null
+        } ?: return JmxResult.Failure(JmxError.Schema("观看记录列表缺失，不能确认记录为空", field = "content"))
+        if (list.any { it !is JsonObject }) {
+            return JmxResult.Failure(JmxError.Schema("观看记录列表含不明条目", field = "content"))
+        }
+        val albums = list.map { (it as JsonObject).toAlbumSummary() }
+        if (albums.any { it.id.isBlank() }) {
+            return JmxResult.Failure(JmxError.Schema("观看记录缺少漫画编号", field = "id"))
+        }
+        val total = root?.intOrNull("total")
+        if (total != null && total < albums.size) {
+            return JmxResult.Failure(JmxError.Schema("观看记录总数不一致", field = "total"))
+        }
+        return JmxResult.Success(AlbumPage(total, albums, root?.toRawMap() ?: emptyMap()))
+    }
+
+    /** 删除一条观看记录。移动端 POST `/watch_list`，表单 `id` 为漫画编号。 */
+    suspend fun deleteWatchHistory(albumId: String): JmxResult<Unit> {
+        val id = watchHistoryDeleteIdOrNull(albumId)
+            ?: return JmxResult.Failure(JmxError.Schema("漫画编号无效", field = "id"))
+        return postWatchHistoryRemoval(id)
+    }
+
+    private suspend fun postWatchHistoryRemoval(id: String): JmxResult<Unit> {
+        return when (
+            val result = apiClient.requestJson(
+                apiRequest(ApiRoute.WatchListAction) {
+                    form("id", id)
+                }
+            )
+        ) {
+            is JmxResult.Success -> {
+                val action = result.value.asObjectOrNull()?.toActionResult()
+                if (action?.acceptsHistoryRemoval() == true) {
+                    JmxResult.Success(Unit)
+                } else {
+                    JmxResult.Failure(
+                        if (action?.status.isNullOrBlank()) JmxError.EmptyData("观看记录删除尚未确认，需要重新查询")
+                        else JmxError.Schema(action.message ?: "观看记录未删除", field = "status")
+                    )
+                }
+            }
+            is JmxResult.Failure -> when {
+                result.error is JmxError.Schema && result.error.field == "data" ->
+                    JmxResult.Failure(JmxError.EmptyData("观看记录删除返回不明载荷，需要重新查询"))
+                else -> result
+            }
         }
     }
 
@@ -333,3 +395,16 @@ class LibraryApi(
             ?: emptyList()
     }
 }
+
+/** 缺失状态需要读回验证，只有明确状态才算写请求已确认。 */
+internal fun ActionResult.acceptsHistoryRemoval(): Boolean {
+    val normalized = status?.trim()?.lowercase()
+    return normalized in HISTORY_REMOVAL_SUCCESS
+}
+
+/** 只接受纯数字漫画编号，避免把清空哨兵或其他字段误当成单条删除。 */
+internal fun watchHistoryDeleteIdOrNull(albumId: String): String? =
+    albumId.trim().takeIf { it.matches(WATCH_HISTORY_ID) }
+
+private val HISTORY_REMOVAL_SUCCESS = setOf("ok", "success", "1", "true")
+private val WATCH_HISTORY_ID = Regex("[0-9]+")

@@ -227,6 +227,7 @@ internal fun JmxApp(
     val favoriteMembership = remember(coverMembershipIdentity) { FavoriteAlbumMembership() }
     val coverFavoriteAlbumIds = key(favoriteMembership) { favoriteMembership.ids.collectAsState().value }
     val favoriteSelection = remember(accountSessionRevision, accountProfile?.id) { FavoriteCollectionSelection() }
+    val historyRemoval = remember(accountSessionRevision, accountProfile?.id) { HistoryRemovalController() }
     var showLogin by rememberSaveable { mutableStateOf(false) }
     var loginSubmitting by remember { mutableStateOf(false) }
     var loginFailure by remember { mutableStateOf<LoginUiFailure?>(null) }
@@ -946,16 +947,31 @@ internal fun JmxApp(
                                                 style = topBarBlurStyle,
                                             ) {
                                                 SmallTopAppBar(
-                                                    title = route.title,
+                                                    title = if (route == JmxRoute.HISTORY && historyRemoval.selecting) {
+                                                        "已选择 ${historyRemoval.selectedIds.size} 部"
+                                                    } else {
+                                                        route.title
+                                                    },
                                                     color = if (pageBackdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface,
                                                     navigationIcon = {
-                                                        IconButton(onClick = ::navigateAccountBack) {
+                                                        IconButton(
+                                                            onClick = {
+                                                                if (route == JmxRoute.HISTORY && historyRemoval.selecting) {
+                                                                    historyRemoval.cancel()
+                                                                } else {
+                                                                    navigateAccountBack()
+                                                                }
+                                                            }
+                                                        ) {
                                                             Icon(
                                                                 imageVector = MiuixIcons.Back,
                                                                 contentDescription = "返回",
                                                                 tint = MiuixTheme.colorScheme.onBackground,
                                                             )
                                                         }
+                                                    },
+                                                    actions = {
+                                                        if (route == JmxRoute.HISTORY) HistoryRemovalActions(historyRemoval)
                                                     },
                                                 )
                                             }
@@ -975,6 +991,7 @@ internal fun JmxApp(
                                             },
                                             repository = accountDataRepository,
                                             selection = favoriteSelection,
+                                            historyRemoval = historyRemoval,
                                             topBarBlurStyle = topBarBlurStyle,
                                             sessionRevision = accountSessionRevision,
                                             favoriteOrder = favoriteSortOrder,

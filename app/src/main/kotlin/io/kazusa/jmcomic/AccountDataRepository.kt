@@ -1,6 +1,7 @@
 package io.kazusa.jmcomic
 
 import io.kazusa.jmcomic.core.api.ActionResult
+import io.kazusa.jmcomic.core.api.AlbumPage
 import io.kazusa.jmcomic.core.api.DailyCheckInfo
 import io.kazusa.jmcomic.core.api.FavoriteFolder
 import io.kazusa.jmcomic.core.api.FavoritePage
@@ -123,6 +124,7 @@ internal class AccountDataRepository(
      * JSON 重新串成字符串），留在调用方线程上就会在"内容即将出现"的那一刻卡住界面。
      */
     private val favoriteMutationMutex = Mutex()
+    private val historyMutationMutex = Mutex()
 
     /** 本地身份快照，不读凭据也不发网络请求；调用链每次 suspend 后检查，避免串账号。 */
     fun accountIdentity(): String? = accountRepository.restore()?.let { "${it.id}:${it.username}" }
@@ -234,6 +236,64 @@ internal class AccountDataRepository(
             currentCoroutineContext().ensureActive()
             if (accountIdentity() != identity) return@withSessionRecovery accountChanged()
             core.interactionApi.moveFavoritesToFolder(listOf(albumId), folderId)
+        }
+
+    suspend fun deleteWatchHistory(albumIds: Set<String>, onProgress: (Int) -> Unit = {}): FavoriteBatchResult =
+        historyMutationMutex.withLock {
+            val identity = accountIdentity()
+            deleteHistoryVerified(
+                ids = albumIds,
+                remove = { id -> if (identity == null) accountChanged() else deleteOneWatchHistory(identity, id) },
+                loadPage = { page ->
+                    val loaded = accountRepository.withSessionRecovery {
+                        if (identity == null || accountIdentity() != identity) accountChanged()
+                        else core.libraryApi.watchList(page)
+                    }
+                    when (loaded) {
+                        is JmxResult.Failure -> loaded
+                        is JmxResult.Success -> JmxResult.Success(
+                            AlbumHistoryIds(loaded.value.content.map { it.id }, loaded.value.total),
+                        )
+                    }
+                },
+                isCurrent = { identity != null && accountIdentity() == identity },
+                onProgress = onProgress,
+            )
+        }
+
+    /**
+     * 服务端没有"一次清空"的参数。空 `id` 会被忽略并仍返回成功，记录还在。
+     * 这里反复读取第一页，按漫画编号逐条删除，直到第一页为空；
+     * 若删完同一批编号仍在，就停止并报错，不假装已清空。
+     */
+    suspend fun clearWatchHistory(onProgress: (Int) -> Unit = {}): JmxResult<Unit> = historyMutationMutex.withLock {
+        val identity = accountIdentity() ?: return@withLock accountChanged()
+        clearHistoryVerified(
+            loadFirst = {
+                when (val page = watchHistoryPage(identity)) {
+                    is JmxResult.Failure -> page
+                    is JmxResult.Success ->
+                        if (accountIdentity() == identity) JmxResult.Success(page.value.content.map { it.id })
+                        else accountChanged()
+                }
+            },
+            remove = { id -> deleteOneWatchHistory(identity, id) },
+            onProgress = onProgress,
+        )
+    }
+
+    private suspend fun watchHistoryPage(identity: String): JmxResult<AlbumPage> =
+        accountRepository.withSessionRecovery {
+            currentCoroutineContext().ensureActive()
+            if (accountIdentity() != identity) return@withSessionRecovery accountChanged()
+            core.libraryApi.watchList(page = 1)
+        }
+
+    private suspend fun deleteOneWatchHistory(identity: String, albumId: String): JmxResult<Unit> =
+        accountRepository.withSessionRecovery {
+            currentCoroutineContext().ensureActive()
+            if (accountIdentity() != identity) return@withSessionRecovery accountChanged()
+            core.libraryApi.deleteWatchHistory(albumId)
         }
 
     suspend fun dailyInfo(profile: AccountProfile): JmxResult<DailyCheckInfo?> {

@@ -1,5 +1,6 @@
 package io.kazusa.jmcomic
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -43,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -73,10 +75,12 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.AddFolder
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Close
+import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.SelectAll
 import top.yukonga.miuix.kmp.icon.extended.Sort
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.springAnimateToPage
+import top.yukonga.miuix.kmp.window.WindowDialog
 import io.kazusa.jmcomic.effect.liquid.GlassTopBarDropdownMenu as WindowIconCascadingDropdownMenu
 import io.kazusa.jmcomic.effect.liquid.GlassTopBarIcon as Icon
 import io.kazusa.jmcomic.effect.liquid.GlassTopBarIconButton as IconButton
@@ -176,6 +180,112 @@ internal fun FavoriteSelectionAction(selection: FavoriteCollectionSelection, sel
     }
 }
 
+/** 观看记录的删除/清空状态；与收藏多选分开，避免两套语义互相清空选择。 */
+@Stable
+internal class HistoryRemovalController {
+    var selecting by mutableStateOf(false)
+    var selectedIds by mutableStateOf<Set<String>>(emptySet())
+    var availableIds by mutableStateOf<Set<String>>(emptySet())
+    var busy by mutableStateOf(false)
+    var processed by mutableIntStateOf(0)
+    var job: Job? = null
+    var confirmDeleteSelected by mutableStateOf(false)
+    var confirmClearAll by mutableStateOf(false)
+    var error by mutableStateOf<String?>(null)
+
+    fun begin(id: String? = null) {
+        if (busy) return
+        selecting = true
+        if (id != null) selectedIds = selectedIds + id
+        error = null
+    }
+
+    fun toggle(id: String) {
+        if (!busy) selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
+    }
+
+    fun cancel() {
+        if (busy) return
+        selecting = false
+        selectedIds = emptySet()
+        confirmDeleteSelected = false
+        confirmClearAll = false
+        error = null
+    }
+}
+
+@Composable
+internal fun HistoryRemovalActions(removal: HistoryRemovalController) {
+    if (removal.busy) {
+        Text(text = "已处理 ${removal.processed}", style = MiuixTheme.textStyles.footnote1)
+        IconButton(onClick = { removal.job?.cancel() }, minWidth = 44.dp, minHeight = 44.dp) {
+            Icon(imageVector = MiuixIcons.Close, contentDescription = "停止清理", tint = MiuixTheme.colorScheme.onBackground)
+        }
+        return
+    }
+    val hasItems = removal.availableIds.isNotEmpty()
+    if (removal.selecting) {
+        IconButton(
+            onClick = {
+                removal.selectedIds = if (removal.selectedIds.containsAll(removal.availableIds)) {
+                    removal.selectedIds - removal.availableIds
+                } else {
+                    removal.selectedIds + removal.availableIds
+                }
+            },
+            enabled = hasItems,
+            minWidth = 44.dp,
+            minHeight = 44.dp,
+        ) {
+            Icon(
+                imageVector = MiuixIcons.SelectAll,
+                contentDescription = if (hasItems && removal.selectedIds.containsAll(removal.availableIds)) {
+                    "取消选择已加载漫画"
+                } else {
+                    "全选已加载漫画"
+                },
+                tint = MiuixTheme.colorScheme.onBackground,
+            )
+        }
+        IconButton(
+            onClick = { removal.confirmDeleteSelected = true },
+            enabled = removal.selectedIds.isNotEmpty(),
+            minWidth = 44.dp,
+            minHeight = 44.dp,
+        ) {
+            Icon(
+                imageVector = MiuixIcons.Delete,
+                contentDescription = "删除所选观看记录",
+                tint = MiuixTheme.colorScheme.error,
+            )
+        }
+        IconButton(
+            onClick = removal::cancel,
+            minWidth = 44.dp,
+            minHeight = 44.dp,
+        ) {
+            Icon(imageVector = MiuixIcons.Close, contentDescription = "退出删除", tint = MiuixTheme.colorScheme.onBackground)
+        }
+    } else {
+        IconButton(
+            onClick = { removal.begin() },
+            enabled = hasItems,
+            minWidth = 44.dp,
+            minHeight = 44.dp,
+        ) {
+            Icon(imageVector = MiuixIcons.SelectAll, contentDescription = "选择观看记录", tint = MiuixTheme.colorScheme.onBackground)
+        }
+        IconButton(
+            onClick = { removal.confirmClearAll = true },
+            enabled = hasItems,
+            minWidth = 44.dp,
+            minHeight = 44.dp,
+        ) {
+            Icon(imageVector = MiuixIcons.Delete, contentDescription = "清空全部观看记录", tint = MiuixTheme.colorScheme.onBackground)
+        }
+    }
+}
+
 @Composable
 internal fun AccountCollectionScreen(
     innerPadding: PaddingValues,
@@ -190,6 +300,7 @@ internal fun AccountCollectionScreen(
     favoriteDirection: FavoriteSortDirection = FavoriteSortDirection.Default,
     updateRecords: Map<String, AlbumUpdateRecord> = emptyMap(),
     selection: FavoriteCollectionSelection? = null,
+    historyRemoval: HistoryRemovalController? = null,
     topBarBlurStyle: TopBarBlurStyle = TopBarBlurStyle.GAUSSIAN,
     // Favorites owns the complete top bar and takes its padding only from its own Scaffold.
     title: String? = null,
@@ -200,6 +311,7 @@ internal fun AccountCollectionScreen(
     val activeSelection = selection ?: ownSelection
     val favorites = kind == AccountCollectionKind.FAVORITES
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var folders by remember(repository, sessionRevision) { mutableStateOf<List<FavoriteFolder>>(emptyList()) }
     var foldersLoading by remember(repository, sessionRevision) { mutableStateOf(true) }
     var folderError by remember(repository, sessionRevision) { mutableStateOf<String?>(null) }
@@ -278,6 +390,25 @@ internal fun AccountCollectionScreen(
     BackHandler(enabled = favorites && activeSelection.selecting && !activeSelection.showFolderPicker) {
         activeSelection.cancel()
     }
+    val removalForBack = historyRemoval
+    BackHandler(
+        enabled = removalForBack != null &&
+            removalForBack.selecting &&
+            !removalForBack.busy &&
+            !removalForBack.confirmDeleteSelected &&
+            !removalForBack.confirmClearAll &&
+            removalForBack.error == null,
+    ) {
+        removalForBack?.cancel()
+    }
+    DisposableEffect(historyRemoval) {
+        onDispose {
+            historyRemoval?.job?.cancel()
+            historyRemoval?.busy = false
+            historyRemoval?.cancel()
+            historyRemoval?.availableIds = emptySet()
+        }
+    }
 
     fun moveTo(folder: FavoriteFolder) {
         val target = folder.id.toIntOrNull()?.takeIf { it > 0 } ?: return
@@ -321,6 +452,98 @@ internal fun AccountCollectionScreen(
         }
     }
 
+    fun finishHistoryRemoval(removedCount: Int, clearedAll: Boolean) {
+        val removal = historyRemoval ?: return
+        removal.busy = false
+        removal.confirmDeleteSelected = false
+        removal.confirmClearAll = false
+        if (removedCount > 0 || clearedAll) {
+            contentRevision++
+            Toast.makeText(
+                context,
+                if (clearedAll) "观看记录已清空" else "已删除 $removedCount 条观看记录",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+        if (removal.error == null) removal.cancel()
+    }
+
+    fun deleteSelectedHistory() {
+        val removal = historyRemoval ?: return
+        val ids = removal.selectedIds.toSet()
+        if (removal.busy || ids.isEmpty()) return
+        val identity = repository.accountIdentity()
+        removal.busy = true
+        removal.error = null
+        removal.confirmDeleteSelected = false
+        removal.processed = 0
+        removal.job = scope.launch {
+            try {
+                val outcome = repository.deleteWatchHistory(ids) { removal.processed = it }
+                if (repository.accountIdentity() != identity) {
+                    removal.error = "账号已变化，请重新打开观看历史"
+                    onRequireLogin()
+                    return@launch
+                }
+                removal.selectedIds = removal.selectedIds - outcome.succeededIds
+                if (outcome.failures.isNotEmpty()) {
+                    removal.error = buildString {
+                        if (outcome.succeededIds.isNotEmpty()) append("已删除 ${outcome.succeededIds.size} 条；")
+                        append("${outcome.failures.size} 条删除失败，已保留选择。")
+                        append(outcome.failures.values.first().toUiMessage())
+                    }
+                    if (outcome.failures.values.any { it.requiresSessionRecovery() }) onRequireLogin()
+                    if (outcome.succeededIds.isNotEmpty()) contentRevision++
+                } else {
+                    finishHistoryRemoval(outcome.succeededIds.size, clearedAll = false)
+                }
+            } catch (cancelled: CancellationException) {
+                contentRevision++
+                throw cancelled
+            } catch (failure: Exception) {
+                removal.error = failure.message ?: "删除失败，请重试"
+            } finally {
+                removal.busy = false
+            }
+        }
+    }
+
+    fun clearAllHistory() {
+        val removal = historyRemoval ?: return
+        if (removal.busy) return
+        val identity = repository.accountIdentity()
+        removal.busy = true
+        removal.error = null
+        removal.confirmClearAll = false
+        removal.processed = 0
+        removal.job = scope.launch {
+            try {
+                when (val result = repository.clearWatchHistory { removal.processed = it }) {
+                    is JmxResult.Success -> {
+                        if (repository.accountIdentity() != identity) {
+                            removal.error = "账号已变化，请重新打开观看历史"
+                            onRequireLogin()
+                        } else {
+                            finishHistoryRemoval(removedCount = 0, clearedAll = true)
+                        }
+                    }
+                    is JmxResult.Failure -> {
+                        contentRevision++
+                        removal.error = result.error.toUiMessage()
+                        if (result.error.requiresSessionRecovery()) onRequireLogin()
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                contentRevision++
+                throw cancelled
+            } catch (failure: Exception) {
+                removal.error = failure.message ?: "清空失败，请重试"
+            } finally {
+                removal.busy = false
+            }
+        }
+    }
+
     val pagerEnabled = favorites && !activeSelection.selecting && !activeSelection.busy &&
         !activeSelection.showFolderPicker && !activeSelection.sortMenuExpanded && !restoringFolderPage
     val collectionContent: @Composable (PaddingValues) -> Unit = { pagePadding ->
@@ -359,6 +582,7 @@ internal fun AccountCollectionScreen(
                     onRequireLogin = onRequireLogin,
                     updateRecords = updateRecords,
                     selection = activeSelection.takeIf { favorites },
+                    historyRemoval = historyRemoval,
                     activePage = (if (page == 0) null else folders.getOrNull(page - 1)?.id) == currentFolderId && !restoringFolderPage,
                     metadataLoading = favorites && foldersLoading,
                 )
@@ -446,6 +670,52 @@ internal fun AccountCollectionScreen(
     } else {
         collectionContent(innerPadding)
     }
+
+    val removal = historyRemoval
+    if (removal != null) {
+        WindowDialog(
+            show = removal.confirmDeleteSelected,
+            title = "删除观看记录",
+            summary = "删除选中的 ${removal.selectedIds.size} 条观看记录？删除后无法恢复。",
+            onDismissRequest = { if (!removal.busy) removal.confirmDeleteSelected = false },
+        ) {
+            TextButton(
+                text = if (removal.busy) "删除中" else "删除",
+                enabled = !removal.busy && removal.selectedIds.isNotEmpty(),
+                onClick = ::deleteSelectedHistory,
+                modifier = Modifier.fillMaxWidth(),
+                colors = destructiveTextButtonColors(),
+            )
+        }
+        WindowDialog(
+            show = removal.confirmClearAll,
+            title = "清空观看记录",
+            summary = "清空全部观看记录？包括尚未加载的记录，且无法恢复。",
+            onDismissRequest = { if (!removal.busy) removal.confirmClearAll = false },
+        ) {
+            TextButton(
+                text = if (removal.busy) "清空中" else "全部清空",
+                enabled = !removal.busy,
+                onClick = ::clearAllHistory,
+                modifier = Modifier.fillMaxWidth(),
+                colors = destructiveTextButtonColors(),
+            )
+        }
+        removal.error?.let { message ->
+            WindowDialog(
+                show = true,
+                title = "操作未完成",
+                summary = message,
+                onDismissRequest = { removal.error = null },
+            ) {
+                TextButton(
+                    text = "知道了",
+                    onClick = { removal.error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -463,6 +733,7 @@ private fun CollectionFolderPage(
     onRequireLogin: () -> Unit,
     updateRecords: Map<String, AlbumUpdateRecord>,
     selection: FavoriteCollectionSelection?,
+    historyRemoval: HistoryRemovalController? = null,
     activePage: Boolean,
     metadataLoading: Boolean,
 ) {
@@ -503,6 +774,12 @@ private fun CollectionFolderPage(
         if (activePage && selection != null) {
             selection.availableIds = availableIds
             if (validContent) selection.selectedIds = selection.selectedIds.intersect(availableIds)
+        }
+    }
+    LaunchedEffect(activePage, validContent, availableIds, historyRemoval) {
+        if (activePage && historyRemoval != null) {
+            historyRemoval.availableIds = availableIds
+            if (validContent) historyRemoval.selectedIds = historyRemoval.selectedIds.intersect(availableIds)
         }
     }
     fun loadMore() {
@@ -549,6 +826,7 @@ private fun CollectionFolderPage(
             onLoadMore = ::loadMore,
             updateChaptersOf = { id -> if (kind == AccountCollectionKind.FAVORITES) updateRecords[id]?.pendingChapters ?: 0 else 0 },
             selection = selection,
+            historyRemoval = historyRemoval,
         )
     }
 }
@@ -590,6 +868,7 @@ private fun AccountCollectionGrid(
     onLoadMore: () -> Unit,
     updateChaptersOf: (String) -> Int,
     selection: FavoriteCollectionSelection?,
+    historyRemoval: HistoryRemovalController? = null,
 ) {
     val gridState = rememberLazyGridState()
     BindTopBarGlassScroll(gridState, active = activePage)
@@ -609,24 +888,44 @@ private fun AccountCollectionGrid(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         items(state.albums, key = { it.id }) { album ->
-            val selected = selection?.selectedIds?.contains(album.id) == true
+            val removal = historyRemoval
+            val historySelecting = removal?.selecting == true
+            val selecting = selection?.selecting == true || historySelecting
+            val selected = when {
+                historySelecting -> album.id in removal!!.selectedIds
+                else -> selection?.selectedIds?.contains(album.id) == true
+            }
             AlbumItem(
                 album = album,
                 coverLifted = album.id == liftedAlbumId,
                 onSelected = { chosen, bounds ->
-                    if (selection?.selecting == true) selection.toggle(chosen.id) else onAlbumSelected(chosen, bounds)
-                },
-                onLongSelected = selection?.let { holder -> {
-                    if (!holder.busy) {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        holder.begin(album.id)
+                    when {
+                        historySelecting -> removal!!.toggle(chosen.id)
+                        selection?.selecting == true -> selection.toggle(chosen.id)
+                        else -> onAlbumSelected(chosen, bounds)
                     }
-                } },
-                updateChapters = if (selection?.selecting == true) 0 else updateChaptersOf(album.id),
-                selected = selected.takeIf { selection?.selecting == true },
-                enabled = selection?.busy != true && selection?.showFolderPicker != true,
+                },
+                onLongSelected = when {
+                    historySelecting -> null
+                    selection != null -> ({
+                        if (!selection.busy) {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            selection.begin(album.id)
+                        }
+                    })
+                    removal != null -> ({
+                        if (!removal.busy) {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            removal.begin(album.id)
+                        }
+                    })
+                    else -> null
+                },
+                updateChapters = if (selecting) 0 else updateChaptersOf(album.id),
+                selected = selected.takeIf { selecting },
+                enabled = selection?.busy != true && selection?.showFolderPicker != true && removal?.busy != true,
                 selectionOverlay = {
-                    if (selection?.selecting == true) AlbumSelectionOverlay(selected, Modifier.matchParentSize())
+                    if (selecting) AlbumSelectionOverlay(selected, Modifier.matchParentSize())
                 },
             )
         }

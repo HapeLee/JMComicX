@@ -307,22 +307,21 @@ internal class AccountDataRepository(
         }
     }
 
-    suspend fun checkIn(profile: AccountProfile, dailyId: Int?): JmxResult<ActionResult> {
+    /**
+     * 手动签到：先读当日状态，已签到就不再提交；提交后一律重新读回确认。
+     * 提交响应为空载荷或网络异常时也不重放，只以回读结果为准。
+     */
+    suspend fun checkIn(profile: AccountProfile): JmxResult<ActionResult> {
         val id = profile.id?.toString()
             ?: return JmxResult.Failure(JmxError.Schema("用户资料缺少 UID", field = "uid"))
-        val eventId = dailyId?.toString()
-            ?: return JmxResult.Failure(JmxError.Schema("签到活动编号缺失", field = "dailyId"))
-        val submit = accountRepository.withSessionRecovery(treatEmptyDataAsSessionLoss = true) {
-            core.libraryApi.dailyCheck(id, eventId)
-        }
-        if (submit is JmxResult.Failure && submit.error is JmxError.EmptyData) {
-            // 提交签到也可能返回空载荷：以重新查询到的当日记录为准，不能只信提交响应
-            return when (val verified = resolveCheckInAfterEmptyPayload(dailyInfo(profile))) {
-                is JmxResult.Success -> verified
-                is JmxResult.Failure -> submit
-            }
-        }
-        return submit
+        return confirmedCheckIn(
+            loadInfo = { dailyInfo(profile) },
+            submit = { eventId ->
+                accountRepository.withSessionRecovery(treatEmptyDataAsSessionLoss = true) {
+                    core.libraryApi.dailyCheck(id, eventId.toString())
+                }
+            },
+        )
     }
 
     suspend fun autoCheckIn(profile: AccountProfile): AutoCheckInResult {
@@ -342,12 +341,9 @@ internal class AccountDataRepository(
                 is JmxResult.Failure -> return AutoCheckInResult.FAILED
             }
             if (info.isSignedToday()) return AutoCheckInResult.ALREADY_SIGNED
-            return when (val result = checkIn(profile, info.dailyId)) {
-                is JmxResult.Success -> if (result.value.isAcceptedCheckInResult()) {
-                    AutoCheckInResult.COMPLETED
-                } else {
-                    AutoCheckInResult.FAILED
-                }
+            // confirmedCheckIn 已经包含回读确认，Success 即代表服务端当日记录成立。
+            return when (checkIn(profile)) {
+                is JmxResult.Success -> AutoCheckInResult.COMPLETED
                 is JmxResult.Failure -> AutoCheckInResult.FAILED
             }
         } finally {
@@ -443,19 +439,7 @@ internal fun DailyCheckInfo.isSignedToday(now: Date = Date()): Boolean {
     }
 }
 
-private fun ActionResult.isAcceptedCheckInResult(): Boolean {
-    val normalizedStatus = status?.trim()?.lowercase(Locale.ROOT)
-    return normalizedStatus.isNullOrEmpty() ||
-        normalizedStatus in AUTO_CHECK_IN_SUCCESS_STATUSES ||
-        message.orEmpty().containsAlreadySignedMessage()
-}
-
-private fun String.containsAlreadySignedMessage(): Boolean {
-    val normalized = lowercase(Locale.ROOT)
-    return "已签到" in normalized || "已簽到" in normalized || "already" in normalized
-}
-
-private val AUTO_CHECK_IN_SUCCESS_STATUSES = setOf("ok", "success", "true", "1")
+/** 签到判定的唯一入口在 [checkInAcceptance]；这里不再保留第二套宽松规则。 */
 
 internal fun todayDate(now: Date = Date()): String =
     SimpleDateFormat("yyyy-MM-dd", Locale.US).format(now)

@@ -199,15 +199,11 @@ internal fun DailyCheckScreen(
                                         checking = true
                                         actionMessage = null
                                         coroutineScope.launch {
-                                            when (val result = repository.checkIn(profile, current.info.dailyId)) {
+                                            when (val result = repository.checkIn(profile)) {
+                                                // 拒绝响应已经在 confirmedCheckIn 里转成 Failure，走到这里就是真成功。
                                                 is JmxResult.Success -> {
-                                                    val rejection = result.value.rejectionMessageOrNull()
-                                                    if (rejection == null) {
-                                                        actionMessage = result.value.message ?: "签到成功"
-                                                        reload()
-                                                    } else {
-                                                        actionMessage = rejection
-                                                    }
+                                                    actionMessage = result.value.message ?: "签到成功"
+                                                    reload()
                                                 }
                                                 is JmxResult.Failure -> {
                                                     if (result.error.requiresSessionRecovery()) onRequireLogin()

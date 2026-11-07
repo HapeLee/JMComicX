@@ -74,6 +74,12 @@ internal class AlbumUpdateCenter(
         publish()
     }
 
+    /** 批量确认只吃调用方给的快照，扫描线程刚发现的新章节不会被一起清掉。 */
+    fun acknowledge(snapshot: Map<String, AlbumUpdateRecord>) {
+        store.acknowledge(snapshot)
+        publish()
+    }
+
     /**
      * 扫一轮更新。
      *

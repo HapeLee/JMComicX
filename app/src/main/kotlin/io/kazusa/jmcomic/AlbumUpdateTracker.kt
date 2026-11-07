@@ -22,6 +22,11 @@ internal data class AlbumUpdateRecord(
     val checkedAt: Long,
     /** 最近发现新增章节的时间；旧记录无法还原时为 0，不冒充服务端更新时间。 */
     val detectedAt: Long = 0L,
+    /**
+     * 记录身份。创建时取当次观测时间，之后每次观测都保持不变；
+     * 漫画被移出书架又加回来（记录重建）才会换新值，用来挡住旧的批量确认快照。
+     */
+    val generation: Long = checkedAt,
 ) {
     /**
      * 待提示的新增话数。
@@ -179,6 +184,7 @@ internal class AlbumUpdateStore(context: Context) {
                     latestChapterCount = latest.coerceAtLeast(chapters),
                     checkedAt = at,
                     detectedAt = at,
+                    generation = existing?.generation ?: at,
                 )
                 affected++
             }
@@ -197,6 +203,14 @@ internal class AlbumUpdateStore(context: Context) {
                     record.copy(seenChapterCount = record.latestChapterCount, checkedAt = at)
                 },
             )
+        }
+    }
+
+    /** 只确认快照里那批观测；点击之后才发现的新章节保持未确认。 */
+    fun acknowledge(snapshot: Map<String, AlbumUpdateRecord>) {
+        if (snapshot.isEmpty()) return
+        synchronized(lock) {
+            writeRecords(acknowledgeAlbumUpdates(readRecords(), snapshot))
         }
     }
 
@@ -244,6 +258,7 @@ internal fun encodeAlbumUpdateRecords(records: Map<String, AlbumUpdateRecord>): 
             put("latest", record.latestChapterCount)
             put("checkedAt", record.checkedAt)
             put("detectedAt", record.detectedAt)
+            put("generation", record.generation)
         }
     }).toString()
 }
@@ -264,6 +279,7 @@ internal fun decodeAlbumUpdateRecords(raw: String): Map<String, AlbumUpdateRecor
             latestChapterCount = latest,
             checkedAt = item.longValue("checkedAt", 0L),
             detectedAt = item.longValue("detectedAt", 0L),
+            generation = item.longValue("generation", item.longValue("checkedAt", 0L)),
         )
     }
     return result
@@ -283,6 +299,8 @@ internal fun observeAlbumUpdate(
     at: Long,
 ): AlbumUpdateRecord {
     val count = chapterCount.coerceAtLeast(0)
+    // 迟到的旧观测不能覆盖更新的观测：并发扫描时后到的慢请求可能带着旧话数。
+    if (previous != null && at < previous.checkedAt) return previous
     return previous?.copy(
         latestChapterCount = count,
         checkedAt = at,

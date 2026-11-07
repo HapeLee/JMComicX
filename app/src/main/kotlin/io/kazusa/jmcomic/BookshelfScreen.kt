@@ -134,6 +134,7 @@ internal fun BookshelfScreen(
     barBackdrop: top.yukonga.miuix.kmp.blur.LayerBackdrop? = null,
     topBarBlurStyle: io.kazusa.jmcomic.effect.TopBarBlurStyle = io.kazusa.jmcomic.effect.TopBarBlurStyle.GAUSSIAN,
     updateRecords: Map<String, AlbumUpdateRecord> = emptyMap(),
+    onAcknowledgeUpdates: (Map<String, AlbumUpdateRecord>) -> Unit = {},
     onRefresh: suspend () -> Unit = {},
     categoryMenuState: FloatingCategoryMenuState,
 ) {
@@ -147,6 +148,8 @@ internal fun BookshelfScreen(
     var entries by remember(repository, selectedGroupId, sortOrder, sortDirection) {
         mutableStateOf(repository.entries(selectedGroupId, sortOrder, sortDirection))
     }
+    // 点下"确认"时的更新快照；之后扫描到的新章节不能被这次确认吞掉。
+    var confirmUpdates by remember { mutableStateOf<Map<String, AlbumUpdateRecord>?>(null) }
     var showGroupEditor by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
     var refreshing by remember { mutableStateOf(false) }
@@ -466,8 +469,19 @@ internal fun BookshelfScreen(
             add(
                 DropdownItem(
                     text = "排序方式",
-                    summary = "${sortOrder.label} · ${sortDirection.label}",
+                    summary = "${sortOrder.label} · ${sortDirection.label}" +
+                        if (sortOrder == BookshelfSortOrder.UPDATED) " · 未确认更新优先" else "",
                     children = sortChildren,
+                ),
+            )
+            add(
+                DropdownItem(
+                    text = "确认全部书架更新",
+                    summary = "仅确认当前已发现的更新，新发现的章节仍会提醒",
+                    enabled = updateRecords.values.any(AlbumUpdateRecord::hasUpdate),
+                    onClick = {
+                        confirmUpdates = updateRecords.filterValues(AlbumUpdateRecord::hasUpdate)
+                    },
                 ),
             )
             selectedGroup?.let { group ->
@@ -641,8 +655,17 @@ internal fun BookshelfScreen(
                         key = { page -> groups.getOrNull(page - 1)?.id ?: ALL_BOOKSHELF_GROUP_ID },
                     ) { page ->
                         val pageGroupId = groups.getOrNull(page - 1)?.id ?: ALL_BOOKSHELF_GROUP_ID
-                        val pageEntries = remember(pageGroupId, sortOrder, sortDirection, revision, contentRevision) {
-                            repository.entries(pageGroupId, sortOrder, sortDirection)
+                        val pageEntries = remember(
+                            pageGroupId, sortOrder, sortDirection, revision, contentRevision, updateRecords,
+                        ) {
+                            // 更新时间排序时未确认更新排前面：本地 updatedAt 不反映服务端新章节。
+                            projectBookshelf(
+                                repository.entries(pageGroupId, sortOrder, sortDirection),
+                                pageGroupId,
+                                sortOrder,
+                                sortDirection,
+                                updateRecords,
+                            )
                         }
                         val pullToRefreshState = rememberPullToRefreshState()
                         PullToRefresh(
@@ -874,6 +897,31 @@ internal fun BookshelfScreen(
             }
         },
     )
+
+    // 批量确认只吃点下那一刻的快照：之后扫描到的新章节仍然会提醒。
+    WindowDialog(
+        show = confirmUpdates != null,
+        title = "确认全部书架更新",
+        summary = "确认这次已发现的书架更新？之后发现的新章节仍会提示，不影响收藏独有的漫画。",
+        onDismissRequest = { confirmUpdates = null },
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            TextButton(
+                text = "取消",
+                onClick = { confirmUpdates = null },
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(
+                text = "确认全部",
+                onClick = {
+                    confirmUpdates?.let(onAcknowledgeUpdates)
+                    confirmUpdates = null
+                },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.textButtonColorsPrimary(),
+            )
+        }
+    }
 
     WindowDialog(
         show = pendingImport != null,

@@ -710,6 +710,7 @@ internal fun JmxApp(
                                                     onPendingGroupConsumed = { pendingBookshelfGroupId = null },
                                                     topBarBlurStyle = topBarBlurStyle,
                                                     updateRecords = albumUpdateRecords,
+                                                    onAcknowledgeUpdates = albumUpdateCenter::acknowledge,
                                                     onRefresh = {
                                                         // 下拉刷新走强制扫描：用户明确要求"现在就看"，
                                                         // 不能被最小扫描间隔挡住。

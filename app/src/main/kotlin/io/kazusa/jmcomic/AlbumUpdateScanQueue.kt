@@ -13,27 +13,35 @@ import kotlinx.coroutines.launch
  *
  * 调用方取消（比如用户离开书架页）不会把已经排队的刷新一起丢掉；
  * 同时到达的多个请求合并成一轮，避免翻页/下拉刷新各打一遍 `/album`。
+ *
+ * [force] 随批次一起排队（按"有则强制"合并）：出队时还要再判一次新鲜度，
+ * 因为一轮扫描可能要几十秒，排队期间"上一轮刚扫完"完全可能已经让请求过期。
  */
 internal class AlbumUpdateScanQueue<T>(
     private val scope: CoroutineScope,
     private val scanningChanged: (Boolean) -> Unit,
-    private val runRound: suspend (includeFavorites: Boolean) -> T,
+    private val runRound: suspend (includeFavorites: Boolean, force: Boolean) -> T,
 ) {
-    private data class Pending<T>(var includeFavorites: Boolean, val waiters: MutableList<CompletableDeferred<T>>)
+    private data class Pending<T>(
+        var includeFavorites: Boolean,
+        var force: Boolean,
+        val waiters: MutableList<CompletableDeferred<T>>,
+    )
 
     private val lock = Any()
     private var pending: Pending<T>? = null
     private var worker: Job? = null
 
-    suspend fun request(includeFavorites: Boolean): T {
+    suspend fun request(includeFavorites: Boolean, force: Boolean): T {
         val reply = CompletableDeferred<T>()
         var start: Job? = null
         synchronized(lock) {
             val queued = pending
             if (queued == null) {
-                pending = Pending(includeFavorites, mutableListOf(reply))
+                pending = Pending(includeFavorites, force, mutableListOf(reply))
             } else {
                 queued.includeFavorites = queued.includeFavorites || includeFavorites
+                queued.force = queued.force || force
                 queued.waiters += reply
             }
             if (worker == null) {
@@ -74,7 +82,7 @@ internal class AlbumUpdateScanQueue<T>(
                 } ?: return
                 active = batch
                 try {
-                    val result = runRound(batch.includeFavorites)
+                    val result = runRound(batch.includeFavorites, batch.force)
                     batch.waiters.forEach { it.complete(result) }
                 } catch (cancelled: CancellationException) {
                     throw cancelled

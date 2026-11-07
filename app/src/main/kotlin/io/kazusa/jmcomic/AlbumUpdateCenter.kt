@@ -36,15 +36,18 @@ internal class AlbumUpdateCenter(
 ) {
     private val store = AlbumUpdateStore(context)
     private val scanner = AlbumUpdateScanner(core, store)
-    // 扫描是 App 级单例：用独立作用域，调用方页面销毁不会把排队中的刷新一起取消。
-    private val scanScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val scanQueue = AlbumUpdateScanQueue(scanScope, { _scanning.value = it }, ::runScanRound)
 
     private val _records = MutableStateFlow(store.records())
     val records: StateFlow<Map<String, AlbumUpdateRecord>> = _records.asStateFlow()
 
+    // 声明顺序即初始化顺序：[scanQueue] 的状态回调会写 [_scanning]，放在它后面只是为了
+    // 让"回调依赖必须先就位"这件事在源码里一眼可见，避免日后挪到构造期调用时踩空。
     private val _scanning = MutableStateFlow(false)
     val scanning: StateFlow<Boolean> = _scanning.asStateFlow()
+
+    // 扫描是 App 级单例：用独立作用域，调用方页面销毁不会把排队中的刷新一起取消。
+    private val scanScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scanQueue = AlbumUpdateScanQueue(scanScope, { _scanning.value = it }, ::runScanRound)
 
     /** 上一次成功枚举到的收藏成员。角标只数这里面的更新，书架独有漫画不算。 */
     private val _favoriteAlbumIds = MutableStateFlow(store.favoriteAlbumIds())
@@ -91,12 +94,16 @@ internal class AlbumUpdateCenter(
      * 而"我的 → 漫画收藏"的角标说的就是收藏。
      */
     suspend fun scan(includeFavorites: Boolean, force: Boolean): AlbumUpdateScanResult? {
+        // 快速路径：明显不该扫就别入队——入队会唤醒 worker，让调用方白白挂到一轮扫描结束。
         if (!force && !isStale()) return null
         // 已经在扫时不再丢弃请求：排到下一轮，多个并发请求合并成一轮。
-        return scanQueue.request(includeFavorites)
+        return scanQueue.request(includeFavorites, force)
     }
 
-    private suspend fun runScanRound(includeFavorites: Boolean): AlbumUpdateScanResult {
+    private suspend fun runScanRound(includeFavorites: Boolean, force: Boolean): AlbumUpdateScanResult? {
+        // 出队时重判：真跑一轮是"每部漫画一次 /album"，排队几十秒后上一轮可能已经扫完了，
+        // 不重判就会因为一次前台切换或书架改动把同一批漫画再扫一遍。
+        if (!force && !isStale()) return null
         try {
             val targets = LinkedHashSet<String>()
             var favoritesFailed = false

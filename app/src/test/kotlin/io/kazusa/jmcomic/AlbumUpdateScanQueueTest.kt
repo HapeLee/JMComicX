@@ -14,24 +14,24 @@ import org.junit.Test
 class AlbumUpdateScanQueueTest {
     @Test
     fun concurrentRequestsCoalesceIntoASingleFollowUpRound() = runBlocking {
-        val rounds = mutableListOf<Boolean>()
+        val rounds = mutableListOf<Pair<Boolean, Boolean>>()
         val gate = CompletableDeferred<Unit>()
-        val queue = AlbumUpdateScanQueue(this, {}, { includeFavorites ->
-            rounds += includeFavorites
+        val queue = AlbumUpdateScanQueue(this, {}, { includeFavorites, force ->
+            rounds += includeFavorites to force
             if (rounds.size == 1) gate.await()
             "round-${rounds.size}"
         })
 
-        val first = async { queue.request(includeFavorites = false) }
+        val first = async { queue.request(includeFavorites = false, force = false) }
         withTimeout(5_000) { while (rounds.isEmpty()) yield() }
-        val followers = List(5) { async { queue.request(includeFavorites = true) } }
+        val followers = List(5) { async { queue.request(includeFavorites = true, force = true) } }
         yield()
 
         gate.complete(Unit)
         assertEquals("round-1", first.await())
         followers.forEach { assertEquals("round-2", it.await()) }
-        // 五个并发请求合并成一轮，且收藏范围按"有则包含"合并。
-        assertEquals(listOf(false, true), rounds)
+        // 五个并发请求合并成一轮，收藏范围与强制标记都按"有则包含"合并。
+        assertEquals(listOf(false to false, true to true), rounds)
     }
 
     @Test
@@ -40,7 +40,7 @@ class AlbumUpdateScanQueueTest {
         val rounds = mutableListOf<Int>()
         val gate = CompletableDeferred<Unit>()
         var started = false
-        val queue = AlbumUpdateScanQueue(this, { scanning += it }, {
+        val queue = AlbumUpdateScanQueue(this, { scanning += it }, { _, _ ->
             rounds += rounds.size + 1
             if (!started) {
                 started = true
@@ -49,9 +49,9 @@ class AlbumUpdateScanQueueTest {
             "ok"
         })
 
-        val first = launch { queue.request(includeFavorites = false) }
+        val first = launch { queue.request(includeFavorites = false, force = false) }
         withTimeout(5_000) { while (rounds.isEmpty()) yield() }
-        val second = async { queue.request(includeFavorites = true) }
+        val second = async { queue.request(includeFavorites = true, force = false) }
         first.cancel()
         yield()
         gate.complete(Unit)
@@ -62,5 +62,23 @@ class AlbumUpdateScanQueueTest {
         assertEquals(listOf(true, false), scanning)
         assertFalse(scanning.last())
         assertTrue(scanning.first())
+    }
+
+    @Test
+    fun failingRoundFailsOnlyItsWaitersAndKeepsTheQueueAlive() = runBlocking {
+        val scanning = mutableListOf<Boolean>()
+        var calls = 0
+        val queue = AlbumUpdateScanQueue(this, { scanning += it }, { _, _ ->
+            calls++
+            if (calls == 1) throw IllegalStateException("boom")
+            "ok"
+        })
+
+        val failure = runCatching { queue.request(includeFavorites = false, force = false) }
+        assertTrue(failure.exceptionOrNull() is IllegalStateException)
+        // 一轮失败不影响后续：状态要回落，下一轮照跑。
+        assertEquals("ok", queue.request(includeFavorites = false, force = false))
+        assertEquals(2, calls)
+        assertEquals(listOf(true, false, true, false), scanning)
     }
 }
